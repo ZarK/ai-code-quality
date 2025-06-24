@@ -46,7 +46,7 @@ else
     fi
     
     # Shell script detection
-    if find . -maxdepth 3 -name "*.sh" -not -path "./quality/*" -type f | head -1 | grep -q .; then
+    if find . -maxdepth 3 -name "*.sh" -type f | head -1 | grep -q .; then
         DETECTED_TECHS="${DETECTED_TECHS}shell,"
     fi
 fi

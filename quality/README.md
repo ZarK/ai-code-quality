@@ -2,6 +2,32 @@
 
 This directory contains the Universal Code Quality System.
 
+## Prerequisites
+
+This system assumes you have the following modern development tools installed:
+
+### Required Tools
+- **asdf** - Version manager for Python and Node.js
+  - Install: https://asdf-vm.com/guide/getting-started.html
+  - Required plugins: `asdf plugin add python` and `asdf plugin add nodejs`
+- **uv** - Fast Python package installer and resolver
+  - Install: `curl -LsSf https://astral.sh/uv/install.sh | sh`
+- **bun** - Fast JavaScript runtime and package manager
+  - Install: `curl -fsSL https://bun.sh/install | bash`
+- **Homebrew** (macOS/Linux) - Only for shell tools (shellcheck, shfmt)
+  - Install: https://brew.sh
+
+### Python Version Support
+- Python 3.12+ (managed via asdf)
+- The system respects whatever Python version is active in your asdf environment
+
+### Node.js Version Support  
+- Node.js 18+ (managed via asdf)
+- The system respects whatever Node.js version is active in your asdf environment
+
+### Installation
+Run `./bin/install_tools.sh` to install all required quality tools.
+
 ## Structure
 
 ```

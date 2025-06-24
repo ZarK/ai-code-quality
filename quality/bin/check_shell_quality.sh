@@ -47,6 +47,7 @@ fi
 
 if [[ "$TOOLS_AVAILABLE" == "false" ]]; then
     printf "\n⚠️  Some tools are missing. Skipping shell quality checks.\n"
+    printf "💡 Run: %s/bin/install_tools.sh to install missing tools\n" "$QUALITY_DIR"
     exit 0
 fi
 
