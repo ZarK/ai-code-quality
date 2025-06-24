@@ -1,0 +1,40 @@
+name: Code Quality
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+        
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        
+    - name: Install Python dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install ruff mypy pytest coverage
+        
+    - name: Install Node.js dependencies
+      run: |
+        npm install -g eslint prettier jest htmlhint stylelint
+        
+    - name: Run Quality Checks
+      run: |
+        FULL_ROLLOUT=1 ./quality/bin/run_checks.sh
+      env:
+        SKIP_E2E: 1
