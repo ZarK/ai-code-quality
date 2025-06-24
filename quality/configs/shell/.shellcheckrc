@@ -1,0 +1,2 @@
+# Disable SC1091 (not following sourced files) - this is expected for our modular structure
+disable=SC1091

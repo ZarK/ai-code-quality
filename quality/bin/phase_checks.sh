@@ -42,11 +42,10 @@ run_stage() {
     local stage_script="$QUALITY_DIR/stages/${stage}-${stage_name}.sh"
 
     if [[ -f "$stage_script" ]]; then
-        printf "Stage %s: " "$stage"
         if bash "$stage_script" --quiet; then
-            printf "PASSED\n"
+            printf "Stage %s (%s): PASSED\n" "$stage" "$stage_name"
         else
-            printf "FAILED\n"
+            printf "Stage %s (%s): FAILED\n" "$stage" "$stage_name"
             return 1
         fi
     else

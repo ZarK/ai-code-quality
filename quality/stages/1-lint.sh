@@ -48,4 +48,8 @@ if [[ "$TECHS" == *"css"* ]]; then
     fi
 fi
 
+if [[ $FAILED -eq 0 ]]; then
+    log "All checks passed!"
+fi
+
 exit $FAILED
