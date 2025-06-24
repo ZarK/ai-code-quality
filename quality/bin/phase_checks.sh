@@ -421,8 +421,8 @@ run_stage() {
     local stage_function="stage_${stage}_${stage_name}"
 
     if declare -F "$stage_function" >/dev/null; then
-        printf "Running Stage %s (%s): " "$stage" "$stage_name"
-        if "$stage_function"; then
+        printf "Stage %s: " "$stage"
+        if "$stage_function" >/dev/null 2>&1; then
             printf "PASSED\n"
         else
             printf "FAILED\n"
