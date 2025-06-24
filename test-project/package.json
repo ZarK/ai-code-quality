@@ -1,0 +1,13 @@
+{
+	"name": "test-project",
+	"version": "1.0.0",
+	"description": "Test project for code quality system",
+	"main": "index.js",
+	"scripts": {
+		"test": "vitest"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "^1.4.1",
+		"vitest": "^1.0.0"
+	}
+}
