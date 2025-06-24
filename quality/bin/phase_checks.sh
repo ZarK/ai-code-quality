@@ -13,3 +13,15 @@ printf "======================
 techs=$("$QUALITY_DIR/lib/detect_tech.sh" "$@")
 printf "📋 Detected: %s
 " "${techs:-none}"
+
+if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
+    printf "
+Usage: %s [options]
+
+" "$0"
+    printf "Options:
+"
+    printf "  --override <tech> Override technology detection
+"
+    exit 0
+fi
