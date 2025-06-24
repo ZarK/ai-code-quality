@@ -6,17 +6,10 @@ QUALITY_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PHASE_FILE="$QUALITY_DIR/.phase_progress"
 
 # =============================================================================
-# MODULAR CHECK FUNCTIONS
+# TOOL CHECK FUNCTIONS (One-liner wrappers)
 # =============================================================================
 
-shellcheck_check() {
-    find . \( -path "*/.venv" -o -path "*/node_modules" -o -path "*/__pycache__" \) -prune -o -name "*.sh" -type f -print0 | xargs -0 shellcheck
-}
-
-shfmt_check() {
-    find . \( -path "*/.venv" -o -path "*/node_modules" -o -path "*/__pycache__" \) -prune -o -name "*.sh" -type f -print0 | xargs -0 shfmt -i 4 -d
-}
-
+# Python tools
 ruff_check() {
     if command -v ruff >/dev/null 2>&1; then
         ruff check .
@@ -41,12 +34,45 @@ mypy_check() {
     fi
 }
 
-pytest_check() {
+pytest_unit() {
     if command -v pytest >/dev/null 2>&1; then
         pytest
     else
         .venv/bin/pytest
     fi
+}
+
+pytest_coverage() {
+    if command -v pytest >/dev/null 2>&1; then
+        pytest --cov=. --cov-report=term-missing
+    else
+        .venv/bin/pytest --cov=. --cov-report=term-missing
+    fi
+}
+
+radon_sloc() {
+    local radon_output
+    if command -v radon >/dev/null 2>&1; then
+        radon_output=$(radon raw .)
+    else
+        radon_output=$(.venv/bin/radon raw .)
+    fi
+
+    echo "$radon_output" | awk '
+        BEGIN { current_file = ""; overall_exit_code = 0; }
+        /^[a-zA-Z0-9_\-\/\.]+\.py$/ { current_file = $0; }
+        /^[[:space:]]*SLOC:/ {
+            if (current_file != "") {
+                sloc_val = $2;
+                if (sloc_val >= 350) {
+                    printf "%s: %d lines >= 350\n", current_file, sloc_val > "/dev/stderr";
+                    overall_exit_code = 1;
+                }
+                current_file = "";
+            }
+        }
+        END { exit overall_exit_code; }
+    '
 }
 
 radon_complexity() {
@@ -145,31 +171,7 @@ if bad:
 PY
 }
 
-radon_sloc() {
-    local radon_output
-    if command -v radon >/dev/null 2>&1; then
-        radon_output=$(radon raw .)
-    else
-        radon_output=$(.venv/bin/radon raw .)
-    fi
-
-    echo "$radon_output" | awk '
-        BEGIN { current_file = ""; overall_exit_code = 0; }
-        /^[a-zA-Z0-9_\-\/\.]+\.py$/ { current_file = $0; }
-        /^[[:space:]]*SLOC:/ {
-            if (current_file != "") {
-                sloc_val = $2;
-                if (sloc_val >= 350) {
-                    printf "%s: %d lines >= 350\n", current_file, sloc_val > "/dev/stderr";
-                    overall_exit_code = 1;
-                }
-                current_file = "";
-            }
-        }
-        END { exit overall_exit_code; }
-    '
-}
-
+# JavaScript/TypeScript tools
 biome_check() {
     if command -v bunx >/dev/null 2>&1; then
         bunx biome check --reporter=summary .
@@ -186,7 +188,17 @@ biome_format() {
     fi
 }
 
-vitest_check() {
+tsc_check() {
+    if [[ -f "tsconfig.json" ]]; then
+        if command -v bunx >/dev/null 2>&1; then
+            bunx tsc --noEmit
+        else
+            npx tsc --noEmit
+        fi
+    fi
+}
+
+vitest_unit() {
     if command -v bunx >/dev/null 2>&1; then
         bunx vitest run
     else
@@ -194,63 +206,184 @@ vitest_check() {
     fi
 }
 
+vitest_coverage() {
+    if command -v bunx >/dev/null 2>&1; then
+        bunx vitest run --coverage
+    else
+        npx vitest run --coverage
+    fi
+}
+
+# Shell tools
+shellcheck_check() {
+    find . \( -path "*/.venv" -o -path "*/node_modules" -o -path "*/__pycache__" \) -prune -o -name "*.sh" -type f -print0 | xargs -0 shellcheck
+}
+
+shfmt_format() {
+    find . \( -path "*/.venv" -o -path "*/node_modules" -o -path "*/__pycache__" \) -prune -o -name "*.sh" -type f -print0 | xargs -0 shfmt -i 4 -d
+}
+
+# HTML/CSS tools
+htmlhint_check() {
+    if find . -name "*.html" -not -path "./node_modules/*" -not -path "./.venv/*" | head -1 | grep -q .; then
+        if command -v bunx >/dev/null 2>&1; then
+            bunx htmlhint "**/*.html"
+        else
+            npx htmlhint "**/*.html"
+        fi
+    fi
+}
+
+stylelint_check() {
+    if find . -name "*.css" -not -path "./node_modules/*" -not -path "./.venv/*" | head -1 | grep -q .; then
+        if command -v bunx >/dev/null 2>&1; then
+            bunx stylelint "**/*.css"
+        else
+            npx stylelint "**/*.css"
+        fi
+    fi
+}
+
 # =============================================================================
-# PHASE FUNCTIONS (Composable from modular checks)
+# 8-STAGE PHASE FUNCTIONS
 # =============================================================================
 
-check_1() {
+stage_1_lint() {
     local techs
     techs=$("$QUALITY_DIR/lib/detect_tech.sh")
 
+    local ran_checks=false
+
+    if [[ "$techs" == *"python"* ]]; then
+        ruff_check && ran_checks=true
+    fi
+    if [[ "$techs" == *"js"* || "$techs" == *"ts"* || "$techs" == *"react"* ]]; then
+        biome_check && ran_checks=true
+    fi
     if [[ "$techs" == *"shell"* ]]; then
-        shellcheck_check && shfmt_check
+        shellcheck_check && ran_checks=true
     fi
-    if [[ "$techs" == *"python"* ]]; then
-        ruff_check && ruff_format
+    if [[ "$techs" == *"html"* ]]; then
+        htmlhint_check && ran_checks=true
     fi
-    if [[ "$techs" == *"js"* || "$techs" == *"ts"* || "$techs" == *"react"* ]]; then
-        biome_check
+    if [[ "$techs" == *"css"* ]]; then
+        stylelint_check && ran_checks=true
     fi
+
+    $ran_checks
 }
 
-check_2() {
+stage_2_format() {
     local techs
     techs=$("$QUALITY_DIR/lib/detect_tech.sh")
 
+    local ran_checks=false
+
     if [[ "$techs" == *"python"* ]]; then
-        mypy_check
+        ruff_format && ran_checks=true
     fi
     if [[ "$techs" == *"js"* || "$techs" == *"ts"* || "$techs" == *"react"* ]]; then
-        biome_format
+        biome_format && ran_checks=true
     fi
+    if [[ "$techs" == *"shell"* ]]; then
+        shfmt_format && ran_checks=true
+    fi
+
+    $ran_checks
 }
 
-check_3() {
+stage_3_type_check() {
     local techs
     techs=$("$QUALITY_DIR/lib/detect_tech.sh")
 
+    local ran_checks=false
+
     if [[ "$techs" == *"python"* ]]; then
-        pytest_check
+        mypy_check && ran_checks=true
     fi
-    if [[ "$techs" == *"js"* || "$techs" == *"ts"* || "$techs" == *"react"* ]]; then
-        vitest_check
+    if [[ "$techs" == *"ts"* ]]; then
+        tsc_check && ran_checks=true
     fi
+
+    $ran_checks
 }
 
-check_4() {
+stage_4_unit_test() {
     local techs
     techs=$("$QUALITY_DIR/lib/detect_tech.sh")
 
+    local ran_checks=false
+
     if [[ "$techs" == *"python"* ]]; then
-        radon_complexity && radon_maintainability && radon_readability && radon_sloc
+        pytest_unit && ran_checks=true
     fi
+    if [[ "$techs" == *"js"* || "$techs" == *"ts"* || "$techs" == *"react"* ]]; then
+        vitest_unit && ran_checks=true
+    fi
+
+    $ran_checks
+}
+
+stage_5_sloc() {
+    local techs
+    techs=$("$QUALITY_DIR/lib/detect_tech.sh")
+
+    local ran_checks=false
+
+    if [[ "$techs" == *"python"* ]]; then
+        radon_sloc && ran_checks=true
+    fi
+
+    $ran_checks
+}
+
+stage_6_complexity() {
+    local techs
+    techs=$("$QUALITY_DIR/lib/detect_tech.sh")
+
+    local ran_checks=false
+
+    if [[ "$techs" == *"python"* ]]; then
+        radon_complexity && ran_checks=true
+    fi
+
+    $ran_checks
+}
+
+stage_7_maintainability() {
+    local techs
+    techs=$("$QUALITY_DIR/lib/detect_tech.sh")
+
+    local ran_checks=false
+
+    if [[ "$techs" == *"python"* ]]; then
+        radon_maintainability && radon_readability && ran_checks=true
+    fi
+
+    $ran_checks
+}
+
+stage_8_coverage() {
+    local techs
+    techs=$("$QUALITY_DIR/lib/detect_tech.sh")
+
+    local ran_checks=false
+
+    if [[ "$techs" == *"python"* ]]; then
+        pytest_coverage && ran_checks=true
+    fi
+    if [[ "$techs" == *"js"* || "$techs" == *"ts"* || "$techs" == *"react"* ]]; then
+        vitest_coverage && ran_checks=true
+    fi
+
+    $ran_checks
 }
 
 # =============================================================================
 # PHASE MANAGEMENT
 # =============================================================================
 
-get_current_phase() {
+get_current_stage() {
     if [[ -f "$PHASE_FILE" ]]; then
         head -n1 "$PHASE_FILE" | tr -d '[:space:]'
     else
@@ -258,29 +391,45 @@ get_current_phase() {
     fi
 }
 
-set_current_phase() {
-    local new_phase=$1
-    echo "$new_phase" >"$PHASE_FILE"
+set_current_stage() {
+    local new_stage=$1
+    echo "$new_stage" >"$PHASE_FILE"
 }
 
-get_available_phases() {
-    declare -F | grep "declare -f check_" | sed 's/declare -f check_//' | sort -n
+get_available_stages() {
+    echo "1 2 3 4 5 6 7 8"
 }
 
-run_phase() {
-    local phase=$1
-    local check_function="check_$phase"
+get_stage_name() {
+    case "$1" in
+    1) echo "lint" ;;
+    2) echo "format" ;;
+    3) echo "type_check" ;;
+    4) echo "unit_test" ;;
+    5) echo "sloc" ;;
+    6) echo "complexity" ;;
+    7) echo "maintainability" ;;
+    8) echo "coverage" ;;
+    *) echo "unknown" ;;
+    esac
+}
 
-    if declare -F "$check_function" >/dev/null; then
-        printf "Running Phase %s: " "$phase"
-        if "$check_function"; then
+run_stage() {
+    local stage=$1
+    local stage_name
+    stage_name=$(get_stage_name "$stage")
+    local stage_function="stage_${stage}_${stage_name}"
+
+    if declare -F "$stage_function" >/dev/null; then
+        printf "Running Stage %s (%s): " "$stage" "$stage_name"
+        if "$stage_function"; then
             printf "PASSED\n"
         else
             printf "FAILED\n"
             return 1
         fi
     else
-        printf "Unknown phase: %s\n" "$phase" >&2
+        printf "Unknown stage: %s\n" "$stage" >&2
         return 1
     fi
 }
@@ -290,47 +439,47 @@ run_phase() {
 # =============================================================================
 
 main() {
-    local target_phase="${1:-}"
+    local target_stage="${1:-}"
 
-    if [[ -z "$target_phase" ]]; then
-        target_phase=$(get_current_phase)
+    if [[ -z "$target_stage" ]]; then
+        target_stage=$(get_current_stage)
     fi
 
-    local current_phase
-    current_phase=$(get_current_phase)
+    local current_stage
+    current_stage=$(get_current_stage)
 
-    local available_phases
-    available_phases=$(get_available_phases)
+    local available_stages
+    available_stages=$(get_available_stages)
 
-    local failed_phases=()
+    local failed_stages=()
 
-    # Run all phases up to and including target phase
-    for phase in $available_phases; do
-        if [[ "$phase" -le "$target_phase" ]]; then
-            if ! run_phase "$phase"; then
-                failed_phases+=("$phase")
+    # Run all stages up to and including target stage
+    for stage in $available_stages; do
+        if [[ "$stage" -le "$target_stage" ]]; then
+            if ! run_stage "$stage"; then
+                failed_stages+=("$stage")
 
-                # If this is a previous phase, it's a regression
-                if [[ "$phase" -lt "$target_phase" ]]; then
-                    printf "REGRESSION in Phase %s - previous phases must not regress\n" "$phase" >&2
+                # If this is a previous stage, it's a regression
+                if [[ "$stage" -lt "$target_stage" ]]; then
+                    printf "REGRESSION in Stage %s - previous stages must not regress\n" "$stage" >&2
                     exit 1
                 fi
             fi
         fi
     done
 
-    if [[ ${#failed_phases[@]} -eq 0 ]]; then
-        # Update current phase if target is newer
-        if [[ "$current_phase" -lt "$target_phase" ]]; then
-            set_current_phase "$target_phase"
+    if [[ ${#failed_stages[@]} -eq 0 ]]; then
+        # Update current stage if target is newer
+        if [[ "$current_stage" -lt "$target_stage" ]]; then
+            set_current_stage "$target_stage"
         fi
         exit 0
     else
-        # Check if only current phase failed (allowed for WIP)
-        if [[ ${#failed_phases[@]} -eq 1 && "${failed_phases[0]}" == "$target_phase" ]]; then
+        # Check if only current stage failed (allowed for WIP)
+        if [[ ${#failed_stages[@]} -eq 1 && "${failed_stages[0]}" == "$target_stage" ]]; then
             exit 0
         else
-            printf "Previous phases failed - regression detected\n" >&2
+            printf "Previous stages failed - regression detected\n" >&2
             exit 1
         fi
     fi
@@ -338,32 +487,36 @@ main() {
 
 # Handle special commands
 case "${1:-}" in
---list-phases)
-    printf "Available phases:\n"
-    get_available_phases | sed 's/^/  /'
+--list-stages)
+    printf "Available stages:\n"
+    for stage in $(get_available_stages); do
+        printf "  %s (%s)\n" "$stage" "$(get_stage_name "$stage")"
+    done
     exit 0
     ;;
---current-phase)
-    get_current_phase
+--current-stage)
+    get_current_stage
     exit 0
     ;;
---set-phase)
+--set-stage)
     if [[ -z "${2:-}" ]]; then
-        printf "Usage: %s --set-phase <phase>\n" "$0" >&2
+        printf "Usage: %s --set-stage <stage>\n" "$0" >&2
         exit 1
     fi
-    set_current_phase "$2"
+    set_current_stage "$2"
     exit 0
     ;;
 --help | -h)
-    printf "Usage: %s [phase|command]\n\n" "$0"
+    printf "Usage: %s [stage|command]\n\n" "$0"
     printf "Commands:\n"
-    printf "  --list-phases     List all available phases\n"
-    printf "  --current-phase   Show current phase\n"
-    printf "  --set-phase <p>   Set current phase\n"
+    printf "  --list-stages     List all available stages\n"
+    printf "  --current-stage   Show current stage\n"
+    printf "  --set-stage <s>   Set current stage\n"
     printf "  --help           Show this help\n"
-    printf "\nPhases:\n"
-    get_available_phases | sed 's/^/  /'
+    printf "\nStages:\n"
+    for stage in $(get_available_stages); do
+        printf "  %s (%s)\n" "$stage" "$(get_stage_name "$stage")"
+    done
     exit 0
     ;;
 esac
