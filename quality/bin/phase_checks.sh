@@ -73,11 +73,6 @@ main() {
         if [[ "$stage" -le "$target_stage" ]]; then
             if ! run_stage "$stage"; then
                 failed_stages+=("$stage")
-
-                if [[ "$stage" -lt "$target_stage" ]]; then
-                    printf "REGRESSION in Stage %s - previous stages must not regress\n" "$stage" >&2
-                    exit 1
-                fi
             fi
         fi
     done
@@ -88,12 +83,8 @@ main() {
         fi
         exit 0
     else
-        if [[ ${#failed_stages[@]} -eq 1 && "${failed_stages[0]}" == "$target_stage" ]]; then
-            exit 0
-        else
-            printf "Previous stages failed - regression detected\n" >&2
-            exit 1
-        fi
+        printf "%s\n" "${failed_stages[@]}" >&2
+        exit 1
     fi
 }
 

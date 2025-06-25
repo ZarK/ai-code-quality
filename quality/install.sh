@@ -27,9 +27,52 @@ printf "🔧 Setting up permissions...\n"
 chmod +x quality/bin/*.sh
 chmod +x quality/lib/*.sh
 chmod +x quality/hooks/*
+chmod +x quality/stages/*.sh
+chmod +x quality/check.sh
+
+printf "🔗 Creating root check.sh wrapper...\n"
+cat >check.sh <<'EOF'
+#!/bin/bash
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+QUALITY_DIR="$SCRIPT_DIR/quality"
+
+if [[ ! -d "$QUALITY_DIR" ]]; then
+    echo "Error: quality directory not found at $QUALITY_DIR"
+    echo "Make sure you're running this from a project with the quality system installed."
+    exit 1
+fi
+
+TARGET_PATH="${1:-$(pwd)}"
+
+if [[ ! -d "$TARGET_PATH" ]]; then
+    echo "Error: Target path '$TARGET_PATH' does not exist"
+    exit 1
+fi
+
+cd "$TARGET_PATH"
+
+exec "$QUALITY_DIR/bin/run_checks.sh" "${@:2}"
+EOF
+chmod +x check.sh
 
 printf "🎯 Initializing phase tracking...\n"
 echo "0" >quality/.phase_progress
+
+printf "📝 Updating .gitignore...\n"
+if [[ -f ".gitignore" ]]; then
+    if ! grep -q "^quality/$" .gitignore 2>/dev/null; then
+        printf "\n# Code quality system\nquality/\n" >>.gitignore
+        printf "✅ Added quality/ to .gitignore\n"
+    else
+        printf "✅ quality/ already in .gitignore\n"
+    fi
+else
+    printf "# Code quality system\nquality/\n" >.gitignore
+    printf "✅ Created .gitignore with quality/ entry\n"
+fi
 
 printf "🪝 Installing pre-commit hook (optional)...\n"
 if [[ -d ".git" ]]; then
@@ -58,6 +101,7 @@ fi
 printf "\n🎉 Installation complete!\n"
 printf "\nNext steps:\n"
 printf "1. Install tools (if skipped): ./quality/bin/install_tools.sh\n"
-printf "2. Run checks: ./quality/bin/run_checks.sh\n"
-printf "3. Get help: ./quality/bin/run_checks.sh --help\n"
+printf "2. Run checks: ./check.sh\n"
+printf "3. Check specific path: ./check.sh src/\n"
+printf "4. Get help: ./quality/bin/run_checks.sh --help\n"
 printf "\nFor more info, see: %s\n" "$REPO_URL"
