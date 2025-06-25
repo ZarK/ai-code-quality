@@ -70,7 +70,7 @@ install_node_tools() {
             printf "package.json not found, installing individual tools...\n"
             bun add -g @biomejs/biome eslint prettier typescript htmlhint stylelint
         fi
-        
+
         # Check if Playwright is needed in the project
         if [[ -f "../package.json" ]] && grep -q '"@playwright/test"' "../package.json" 2>/dev/null; then
             printf "Playwright detected, installing Playwright...\n"

@@ -5,6 +5,51 @@ set -euo pipefail
 REPO_URL="https://github.com/your-org/ai-code-quality"
 QUALITY_DIR="quality"
 
+setup_pre_commit_hook() {
+    printf "🪝 Setting up pre-commit hook...\n"
+
+    if [[ ! -d ".git" ]]; then
+        printf "❌ Not a git repository. Pre-commit hook cannot be installed.\n"
+        return 1
+    fi
+
+    if [[ -f ".git/hooks/pre-commit" ]]; then
+        printf "⚠️  Pre-commit hook already exists.\n"
+        printf "   Current hook content:\n"
+        printf "   %s\n" "$(head -3 .git/hooks/pre-commit)"
+        printf "   ...\n"
+        printf "\nWould you like to backup and replace it? (y/N): "
+        read -r replace_hook
+
+        if [[ "$replace_hook" =~ ^[Yy]$ ]]; then
+            mv ".git/hooks/pre-commit" ".git/hooks/pre-commit.backup.$(date +%s)"
+            printf "✅ Existing hook backed up\n"
+        else
+            printf "❌ Pre-commit hook setup cancelled.\n"
+            printf "   To manually integrate, add this to your existing hook:\n"
+            printf "   ./quality/bin/run_checks.sh\n"
+            return 1
+        fi
+    fi
+
+    if [[ ! -f "quality/hooks/pre-commit" ]]; then
+        printf "❌ Quality system pre-commit hook not found.\n"
+        printf "   Make sure the quality system is properly installed.\n"
+        return 1
+    fi
+
+    ln -s "../../quality/hooks/pre-commit" ".git/hooks/pre-commit"
+    printf "✅ Pre-commit hook installed successfully\n"
+    printf "   Quality checks will now run automatically before each commit\n"
+    printf "   To disable: rm .git/hooks/pre-commit\n"
+    return 0
+}
+
+if [[ "${1:-}" == "--setup-hook" ]]; then
+    setup_pre_commit_hook
+    exit $?
+fi
+
 printf "🔧 Installing Universal Code Quality System\n"
 printf "==========================================\n"
 
@@ -74,19 +119,6 @@ else
     printf "✅ Created .gitignore with quality/ entry\n"
 fi
 
-printf "🪝 Installing pre-commit hook (optional)...\n"
-if [[ -d ".git" ]]; then
-    if [[ ! -f ".git/hooks/pre-commit" ]]; then
-        ln -s "../../quality/hooks/pre-commit" ".git/hooks/pre-commit"
-        printf "✅ Pre-commit hook installed\n"
-    else
-        printf "⚠️  Pre-commit hook already exists. Manual setup required.\n"
-        printf "   Add this to your existing hook: ./quality/bin/run_checks.sh\n"
-    fi
-else
-    printf "⚠️  Not a git repository. Pre-commit hook skipped.\n"
-fi
-
 printf "\n🔧 Installing quality tools...\n"
 printf "Would you like to install required quality tools now? (y/N): "
 read -r install_tools
@@ -98,10 +130,22 @@ else
     printf "You can install tools later with: ./quality/bin/install_tools.sh\n"
 fi
 
+printf "\n🪝 Setting up pre-commit hook...\n"
+printf "Would you like to set up the pre-commit hook to run quality checks? (y/N): "
+read -r setup_hook
+
+if [[ "$setup_hook" =~ ^[Yy]$ ]]; then
+    setup_pre_commit_hook
+else
+    printf "Skipping pre-commit hook setup.\n"
+    printf "You can set it up later by running: ./quality/install.sh --setup-hook\n"
+fi
+
 printf "\n🎉 Installation complete!\n"
 printf "\nNext steps:\n"
 printf "1. Install tools (if skipped): ./quality/bin/install_tools.sh\n"
-printf "2. Run checks: ./check.sh\n"
-printf "3. Check specific path: ./check.sh src/\n"
-printf "4. Get help: ./quality/bin/run_checks.sh --help\n"
+printf "2. Setup pre-commit hook (if skipped): ./quality/install.sh --setup-hook\n"
+printf "3. Run checks: ./check.sh\n"
+printf "4. Check specific path: ./check.sh src/\n"
+printf "5. Get help: ./quality/bin/run_checks.sh --help\n"
 printf "\nFor more info, see: %s\n" "$REPO_URL"
