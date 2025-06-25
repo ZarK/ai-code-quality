@@ -5,6 +5,7 @@ QUALITY_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 get_stage_name() {
     case "$1" in
+    0) echo "e2e" ;;
     1) echo "lint" ;;
     2) echo "format" ;;
     3) echo "type_check" ;;

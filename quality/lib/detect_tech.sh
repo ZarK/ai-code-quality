@@ -33,6 +33,9 @@ else
         if grep -q '"react"' package.json 2>/dev/null; then
             DETECTED_TECHS="${DETECTED_TECHS}react,"
         fi
+        if grep -q '"@playwright/test"' package.json 2>/dev/null; then
+            DETECTED_TECHS="${DETECTED_TECHS}playwright,"
+        fi
     fi
 
     # HTML detection

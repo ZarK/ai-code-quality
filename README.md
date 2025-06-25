@@ -22,6 +22,7 @@ echo "0" > quality/.phase_progress
 ## Features
 
 - Auto-Detection: Automatically detects Python, JavaScript/TypeScript, HTML/CSS, React
+- E2E Integration: Runs E2E tests before all quality stages (Playwright, pytest)
 - Staged Rollout: Add quality checks gradually to existing codebases
 - No Regression: Previous phases must always pass (prevents quality degradation)
 - Self-Contained: All configs and tools live in the quality/ directory
@@ -37,14 +38,17 @@ echo "0" > quality/.phase_progress
 # Run quality checks (auto-detects technology)
 ./quality/bin/run_checks.sh
 
-# Override technology detection
-./quality/bin/run_checks.sh --override python,js
+# Run specific stage (0=E2E, 1=lint, 2=format, etc.)
+./quality/bin/phase_checks.sh 0
 
-# Check current phase
-./quality/bin/run_checks.sh --current-phase
+# Run E2E tests only
+./quality/bin/phase_checks.sh 0
 
-# Set current phase (when you complete a phase)
-./quality/bin/run_checks.sh --set-phase 2
+# Check current stage
+./quality/bin/phase_checks.sh --current-stage
+
+# Set current stage (when you complete a stage)
+./quality/bin/phase_checks.sh --set-stage 2
 ```
 
 ### Environment Variables

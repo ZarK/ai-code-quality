@@ -18,11 +18,12 @@ set_current_stage() {
 }
 
 get_available_stages() {
-    echo "1 2 3 4 5 6 7 8"
+    echo "0 1 2 3 4 5 6 7 8"
 }
 
 get_stage_name() {
     case "$1" in
+    0) echo "e2e" ;;
     1) echo "lint" ;;
     2) echo "format" ;;
     3) echo "type_check" ;;
