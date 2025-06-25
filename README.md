@@ -15,94 +15,89 @@ curl -sSL https://raw.githubusercontent.com/your-org/ai-code-quality/main/qualit
 ```bash
 git clone https://github.com/your-org/ai-code-quality.git
 cp -r ai-code-quality/quality ./
-chmod +x quality/bin/*.sh quality/lib/*.sh quality/hooks/*
+chmod +x quality/bin/*.sh quality/lib/*.sh quality/hooks/* quality/stages/*.sh quality/check.sh
 echo "0" > quality/.phase_progress
-```
-
-### Pre-commit Hook Setup
-
-```bash
-# Setup during installation (interactive prompt)
-./quality/install.sh
-
-# Setup after installation
-./quality/install.sh --setup-hook
 ```
 
 ## Features
 
-- Auto-Detection: Automatically detects Python, JavaScript/TypeScript, HTML/CSS, React
-- E2E Integration: Runs E2E tests before all quality stages (Playwright, pytest)
-- Staged Rollout: Add quality checks gradually to existing codebases
-- No Regression: Previous phases must always pass (prevents quality degradation)
-- Self-Contained: All configs and tools live in the quality/ directory
-- Pre-commit Ready: Includes Git pre-commit hook integration
-- Technology-Aware: Only runs relevant checks for detected technologies
-- Opinionated: Sensible defaults that work out of the box
+- **Auto-Detection**: Automatically detects Python, JavaScript/TypeScript, HTML/CSS, React
+- **E2E First**: Runs E2E tests before all quality stages (Playwright, pytest)
+- **Staged Rollout**: Add quality checks gradually to existing codebases
+- **No Regression**: Previous phases must always pass (prevents quality degradation)
+- **Self-Contained**: All configs and tools live in the quality/ directory
+- **Pre-commit Ready**: Includes Git pre-commit hook integration
+- **Technology-Aware**: Only runs relevant checks for detected technologies
+- **Opinionated**: Sensible defaults that work out of the box
 
 ## Usage
 
 ### Basic Commands
 
 ```bash
-# Simple wrapper - run quality checks from any directory
+# Run all quality checks
 ./quality/check.sh
 
-# Run quality checks (auto-detects technology)
-./quality/bin/run_checks.sh
+# Check specific directory
+./quality/check.sh src/
 
-# Run specific stage (0=E2E, 1=lint, 2=format, etc.)
-./quality/bin/phase_checks.sh 1
+# Check specific stage
+./quality/check.sh . 3
 
-# Run E2E tests only (Stage 0)
-./quality/bin/phase_checks.sh 0
-
-# Check current stage
-./quality/bin/phase_checks.sh --current-stage
-
-# Set current stage (when you complete a stage)
-./quality/bin/phase_checks.sh --set-stage 2
-
-# List all available stages
-./quality/bin/phase_checks.sh --list-stages
+# Get help
+./quality/check.sh --help
 ```
 
-### Environment Variables
+### Pre-commit Hook Setup
 
 ```bash
-# Skip E2E tests
-SKIP_E2E=1 ./quality/bin/run_checks.sh
+# Setup pre-commit hook
+./quality/install.sh --setup-hook
 
-# Full rollout (run all phases, ignore progress)
-FULL_ROLLOUT=1 ./quality/bin/run_checks.sh
+# Remove pre-commit hook
+rm .git/hooks/pre-commit
 ```
 
-## Stage System
+## Quality Stages
 
-The system uses a 9-stage approach (0-8) with the "no regression" rule:
+The system runs 9 stages in order (0-8):
 
-**Stage 0: E2E Testing** - Runs end-to-end tests before all quality checks
-**Stages 1-8: Quality Checks** - Lint, format, type check, unit test, SLOC, complexity, maintainability, coverage
+0. **E2E**: End-to-end testing (Playwright, pytest)
+1. **Lint**: Code linting (ESLint, Ruff, HTMLHint)
+2. **Format**: Code formatting (Prettier, Ruff format, shfmt)
+3. **Type Check**: Static type checking (TypeScript, mypy)
+4. **Unit Test**: Unit testing (Jest, pytest)
+5. **SLOC**: Source lines of code analysis
+6. **Complexity**: Cyclomatic complexity analysis (Radon)
+7. **Maintainability**: Code maintainability metrics (Radon)
+8. **Coverage**: Test coverage analysis (Jest, pytest-cov)
 
-1. Previous stages must always pass (no quality degradation)
-2. Current stage can fail (work-in-progress allowed)
-3. Future stages are skipped
+## Supported Technologies
 
-### For Existing Projects (Staged Rollout)
+- **Python**: Ruff (lint/format), mypy (types), pytest (test), radon (metrics)
+- **JavaScript/TypeScript**: ESLint (lint), Prettier (format), TypeScript (types), Jest (test)
+- **HTML/CSS**: HTMLHint (lint), Stylelint (lint), Prettier (format)
+- **Shell**: shellcheck (lint), shfmt (format)
+- **E2E Testing**: Playwright (JS/TS), pytest (Python)
 
-```bash
-# Start with Stage 1 (skip E2E for now)
-./quality/bin/phase_checks.sh --set-stage 1
-./quality/bin/run_checks.sh  # Fix all issues
+## Documentation
 
-# Move to Stage 2 when Stage 1 is clean
-./quality/bin/phase_checks.sh --set-stage 2
-./quality/bin/run_checks.sh  # Now Stage 1 must pass + work on Stage 2
+- [Stage System Details](docs/STAGE_SYSTEM.md)
+- [E2E Integration Guide](docs/E2E_INTEGRATION.md)
+
+## Project Structure
+
+```
+quality/
+├── bin/           # Internal scripts (don't use directly)
+├── configs/       # Tool configurations
+├── hooks/         # Git hooks
+├── lib/           # Shared libraries
+├── stages/        # Individual stage scripts
+├── check.sh       # Main entry point
+└── install.sh     # Installation script
 ```
 
-### For New Projects (Full Activation)
+## License
 
-```bash
-# Run all stages from day one (including E2E)
-FULL_ROLLOUT=1 ./quality/bin/run_checks.sh
-```
+MIT License - see LICENSE file for details.

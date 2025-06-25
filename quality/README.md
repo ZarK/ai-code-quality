@@ -1,64 +1,82 @@
-# Quality Module
+# Universal Code Quality System
 
-This directory contains the Universal Code Quality System.
+A self-contained, technology-aware code quality system that can be easily added to any repository.
+
+## Usage
+
+### Basic Commands
+
+```bash
+# Run all quality checks
+./check.sh
+
+# Check specific directory
+./check.sh ../src/
+
+# Check specific stage
+./check.sh . 3
+
+# Get help
+./check.sh --help
+```
+
+### Pre-commit Hook Setup
+
+```bash
+# Setup pre-commit hook
+./install.sh --setup-hook
+
+# Remove pre-commit hook
+rm ../.git/hooks/pre-commit
+```
+
+## Quality Stages
+
+The system runs 9 stages in order (0-8):
+
+0. **E2E**: End-to-end testing (Playwright, pytest)
+1. **Lint**: Code linting (ESLint, Ruff, HTMLHint)
+2. **Format**: Code formatting (Prettier, Ruff format, shfmt)
+3. **Type Check**: Static type checking (TypeScript, mypy)
+4. **Unit Test**: Unit testing (Jest, pytest)
+5. **SLOC**: Source lines of code analysis
+6. **Complexity**: Cyclomatic complexity analysis (Radon)
+7. **Maintainability**: Code maintainability metrics (Radon)
+8. **Coverage**: Test coverage analysis (Jest, pytest-cov)
 
 ## Prerequisites
 
-This system assumes you have the following modern development tools installed:
-
 ### Required Tools
 - **asdf** - Version manager for Python and Node.js
-  - Install: https://asdf-vm.com/guide/getting-started.html
-  - Required plugins: `asdf plugin add python` and `asdf plugin add nodejs`
 - **uv** - Fast Python package installer and resolver
-  - Install: `curl -LsSf https://astral.sh/uv/install.sh | sh`
 - **bun** - Fast JavaScript runtime and package manager
-  - Install: `curl -fsSL https://bun.sh/install | bash`
-- **Homebrew** (macOS/Linux) - Only for shell tools (shellcheck, shfmt)
-  - Install: https://brew.sh
-
-### Python Version Support
-- Python 3.12+ (managed via asdf)
-- The system respects whatever Python version is active in your asdf environment
-
-### Node.js Version Support  
-- Node.js 18+ (managed via asdf)
-- The system respects whatever Node.js version is active in your asdf environment
+- **Homebrew** (macOS/Linux) - For shell tools (shellcheck, shfmt)
 
 ### Installation
 Run `./bin/install_tools.sh` to install all required quality tools.
 
-## Structure
+## Supported Technologies
+
+- **Python**: Ruff (lint/format), mypy (types), pytest (test), radon (metrics)
+- **JavaScript/TypeScript**: ESLint (lint), Prettier (format), TypeScript (types), Jest (test)
+- **HTML/CSS**: HTMLHint (lint), Stylelint (lint), Prettier (format)
+- **Shell**: shellcheck (lint), shfmt (format)
+- **E2E Testing**: Playwright (JS/TS), pytest (Python)
+
+## Documentation
+
+- [Stage System Details](../docs/STAGE_SYSTEM.md)
+- [E2E Integration Guide](../docs/E2E_INTEGRATION.md)
+
+## Project Structure
 
 ```
 quality/
-├── bin/                    # Executable scripts
-│   ├── run_checks.sh      # Main entry point
-│   └── phase_checks.sh    # Core phase logic
-├── configs/               # Configuration files
-│   ├── python/           # Python tool configs
-│   ├── js/               # JavaScript/TypeScript configs
-│   └── html/             # HTML/CSS configs
-├── hooks/                # Git hooks
-│   └── pre-commit        # Pre-commit hook
-├── lib/                  # Library scripts
-│   └── detect_tech.sh    # Technology detection
-└── .phase_progress       # Current phase tracking
+├── bin/           # Internal scripts (don't use directly)
+├── configs/       # Tool configurations
+├── hooks/         # Git hooks
+├── lib/           # Shared libraries
+├── stages/        # Individual stage scripts
+├── check.sh       # Main entry point
+└── install.sh     # Installation script
 ```
-
-## Usage
-
-See the main README.md for usage instructions.
-
-## Adding New Technologies
-
-1. Update `lib/detect_tech.sh` to detect the new technology
-2. Add check functions to `bin/phase_checks.sh`
-3. Create configuration files in `configs/new-tech/`
-4. Register the phases in the `register_phases()` function
-
-## Adding New Phases
-
-1. Create a new check function: `check_N_description()`
-2. Add it to the appropriate technology in `register_phases()`
-3. The system will automatically discover and use the new phase
