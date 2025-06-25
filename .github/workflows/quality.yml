@@ -24,10 +24,21 @@ jobs:
       with:
         node-version: '18'
         
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y shellcheck
+        
+    - name: Install shfmt
+      run: |
+        curl -L https://github.com/mvdan/sh/releases/latest/download/shfmt_v3.7.0_linux_amd64 -o /tmp/shfmt
+        chmod +x /tmp/shfmt
+        sudo mv /tmp/shfmt /usr/local/bin/shfmt
+        
     - name: Install Python dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install ruff mypy pytest coverage
+        pip install ruff mypy pytest pytest-cov coverage radon
         
     - name: Install Node.js dependencies
       run: |
