@@ -1,9 +1,16 @@
-# 8-Stage Code Quality System
+# 9-Stage Code Quality System
 
 ## Overview
-The code quality system has been restructured into 8 focused stages that run across all detected technologies. Each stage can be run independently and focuses on a single quality aspect.
+The code quality system has been restructured into 9 focused stages (0-8) that run across all detected technologies. Each stage can be run independently and focuses on a single quality aspect.
 
 ## Stages
+
+### Stage 0: E2E Testing
+**Purpose**: End-to-end testing before all quality checks
+**Tools**:
+- JavaScript/TypeScript: `playwright test`
+- Python: `pytest` (E2E tests in tests/e2e/, e2e/, or test/e2e/)
+**Behavior**: Automatically detects E2E tests and frameworks, skips if none found
 
 ### Stage 1: Lint
 **Purpose**: Basic code checks and linting
@@ -57,30 +64,41 @@ The code quality system has been restructured into 8 focused stages that run acr
 ## Usage
 
 ```bash
-# List all available stages
-quality/bin/phase_checks.sh --list-stages
+# Simple wrapper - run from any directory
+./quality/check.sh
+
+# List all available stages (0-8)
+./quality/bin/phase_checks.sh --list-stages
 
 # Run specific stage
-quality/bin/phase_checks.sh 1
+./quality/bin/phase_checks.sh 1
+
+# Run E2E tests only (Stage 0)
+./quality/bin/phase_checks.sh 0
 
 # Run all stages up to stage N
-quality/bin/phase_checks.sh 5
+./quality/bin/phase_checks.sh 5
 
 # Show current stage
-quality/bin/phase_checks.sh --current-stage
+./quality/bin/phase_checks.sh --current-stage
 
 # Set current stage
-quality/bin/phase_checks.sh --set-stage 3
+./quality/bin/phase_checks.sh --set-stage 3
+
+# Run all quality checks (respects current stage)
+./quality/bin/run_checks.sh
 ```
 
 ## Key Features
 
-1. **Incremental**: Each stage builds on the previous ones
-2. **Technology Agnostic**: Automatically detects and runs appropriate tools
-3. **Regression Protection**: Previous stages must not regress
-4. **Clean Output**: Simple "PASSED/FAILED" output without emojis
-5. **Focused**: Each stage has a single responsibility
-6. **Overcomable**: Each stage can be tackled independently
+1. **E2E First**: Stage 0 runs E2E tests before all quality checks
+2. **Incremental**: Each stage builds on the previous ones
+3. **Technology Agnostic**: Automatically detects and runs appropriate tools
+4. **Regression Protection**: Previous stages must not regress
+5. **Clean Output**: Simple "PASSED/FAILED" output without emojis
+6. **Focused**: Each stage has a single responsibility
+7. **Overcomable**: Each stage can be tackled independently
+8. **Pre-commit Ready**: Includes optional Git pre-commit hook integration
 
 ## Technology Detection
 
@@ -90,6 +108,7 @@ The system automatically detects technologies based on:
 - HTML: `*.html` files
 - CSS: `*.css` files  
 - Shell: `*.sh` files
+- E2E Tests: `tests/e2e/`, `e2e/`, `test/e2e/` directories
 
 ## Dependencies
 
@@ -105,3 +124,20 @@ The system automatically detects technologies based on:
 - vitest + @vitest/coverage-v8 (testing + coverage)
 - htmlhint (HTML linting)
 - stylelint (CSS linting)
+- @playwright/test (E2E testing, installed when detected)
+
+### Shell
+- shellcheck (linting)
+- shfmt (formatting)
+
+## Pre-commit Hook
+
+```bash
+# Setup during installation
+./quality/install.sh
+
+# Setup after installation
+./quality/install.sh --setup-hook
+```
+
+The pre-commit hook runs all quality stages before each commit, preventing code that fails quality checks from being committed.

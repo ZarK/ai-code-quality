@@ -19,6 +19,16 @@ chmod +x quality/bin/*.sh quality/lib/*.sh quality/hooks/*
 echo "0" > quality/.phase_progress
 ```
 
+### Pre-commit Hook Setup
+
+```bash
+# Setup during installation (interactive prompt)
+./quality/install.sh
+
+# Setup after installation
+./quality/install.sh --setup-hook
+```
+
 ## Features
 
 - Auto-Detection: Automatically detects Python, JavaScript/TypeScript, HTML/CSS, React
@@ -35,13 +45,16 @@ echo "0" > quality/.phase_progress
 ### Basic Commands
 
 ```bash
+# Simple wrapper - run quality checks from any directory
+./quality/check.sh
+
 # Run quality checks (auto-detects technology)
 ./quality/bin/run_checks.sh
 
 # Run specific stage (0=E2E, 1=lint, 2=format, etc.)
-./quality/bin/phase_checks.sh 0
+./quality/bin/phase_checks.sh 1
 
-# Run E2E tests only
+# Run E2E tests only (Stage 0)
 ./quality/bin/phase_checks.sh 0
 
 # Check current stage
@@ -49,6 +62,9 @@ echo "0" > quality/.phase_progress
 
 # Set current stage (when you complete a stage)
 ./quality/bin/phase_checks.sh --set-stage 2
+
+# List all available stages
+./quality/bin/phase_checks.sh --list-stages
 ```
 
 ### Environment Variables
@@ -61,29 +77,32 @@ SKIP_E2E=1 ./quality/bin/run_checks.sh
 FULL_ROLLOUT=1 ./quality/bin/run_checks.sh
 ```
 
-## Phase System
+## Stage System
 
-The system uses a phase-based approach with the "no regression" rule:
+The system uses a 9-stage approach (0-8) with the "no regression" rule:
 
-1. Previous phases must always pass (no quality degradation)
-2. Current phase can fail (work-in-progress allowed)
-3. Future phases are skipped
+**Stage 0: E2E Testing** - Runs end-to-end tests before all quality checks
+**Stages 1-8: Quality Checks** - Lint, format, type check, unit test, SLOC, complexity, maintainability, coverage
+
+1. Previous stages must always pass (no quality degradation)
+2. Current stage can fail (work-in-progress allowed)
+3. Future stages are skipped
 
 ### For Existing Projects (Staged Rollout)
 
 ```bash
-# Start with Phase 1
-./quality/bin/run_checks.sh --set-phase 1
+# Start with Stage 1 (skip E2E for now)
+./quality/bin/phase_checks.sh --set-stage 1
 ./quality/bin/run_checks.sh  # Fix all issues
 
-# Move to Phase 2 when Phase 1 is clean
-./quality/bin/run_checks.sh --set-phase 2
-./quality/bin/run_checks.sh  # Now Phase 1 must pass + work on Phase 2
+# Move to Stage 2 when Stage 1 is clean
+./quality/bin/phase_checks.sh --set-stage 2
+./quality/bin/run_checks.sh  # Now Stage 1 must pass + work on Stage 2
 ```
 
 ### For New Projects (Full Activation)
 
 ```bash
-# Run all phases from day one
+# Run all stages from day one (including E2E)
 FULL_ROLLOUT=1 ./quality/bin/run_checks.sh
 ```
