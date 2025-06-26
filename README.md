@@ -80,6 +80,17 @@ The system runs 9 stages in order (0-8):
 - **Shell**: shellcheck (lint), shfmt (format)
 - **E2E Testing**: Playwright (JS/TS), pytest (Python)
 
+## GitHub Actions Integration
+
+The system includes a pre-configured GitHub Actions workflow that runs all quality checks on pull requests and pushes to main/develop branches. The workflow:
+
+- Automatically detects verbose mode when GitHub Actions debug logging is enabled
+- Installs all required tools (shellcheck, shfmt, Python packages, Node.js packages)
+- Runs all 8 quality stages with proper error reporting
+- Provides detailed debug information for failed stages
+
+See `.github/workflows/quality.yml` for the complete configuration.
+
 ## Documentation
 
 - [Stage System Details](docs/STAGE_SYSTEM.md)
