@@ -355,16 +355,16 @@ shellcheck_check() {
     fi
 
     local shellcheck_config="$QUALITY_DIR/configs/shell/.shellcheckrc"
-    local shellcheck_cmd="shellcheck"
+    local shellcheck_args=()
     if [[ -f "$shellcheck_config" ]]; then
-        shellcheck_cmd="shellcheck --rcfile=$shellcheck_config"
+        shellcheck_args+=("--rcfile=$shellcheck_config")
     fi
 
     if [[ $VERBOSE -eq 1 ]]; then
-        echo "$shell_files" | xargs bash -c 'exec '"$shellcheck_cmd"' "$@"' _
+        echo "$shell_files" | xargs shellcheck "${shellcheck_args[@]}"
     else
         local shellcheck_output
-        shellcheck_output=$(echo "$shell_files" | xargs bash -c 'exec '"$shellcheck_cmd"' "$@"' _ 2>&1)
+        shellcheck_output=$(echo "$shell_files" | xargs shellcheck "${shellcheck_args[@]}" 2>&1)
         local exit_code=$?
 
         if [[ $exit_code -ne 0 ]]; then
