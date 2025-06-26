@@ -356,15 +356,28 @@ shellcheck_check() {
 
     local shellcheck_config="$QUALITY_DIR/configs/shell/.shellcheckrc"
     local shellcheck_args=()
-    if [[ -f "$shellcheck_config" ]]; then
+
+    # Check if shellcheck supports --rcfile option
+    if [[ -f "$shellcheck_config" ]] && shellcheck --help 2>/dev/null | grep -q -- "--rcfile"; then
         shellcheck_args+=("--rcfile=$shellcheck_config")
+    elif [[ -f "$shellcheck_config" ]]; then
+        # For older versions, use exclude option directly
+        shellcheck_args+=("--exclude=SC1091")
     fi
 
     if [[ $VERBOSE -eq 1 ]]; then
-        echo "$shell_files" | xargs shellcheck "${shellcheck_args[@]}"
+        if [[ ${#shellcheck_args[@]} -eq 0 ]]; then
+            echo "$shell_files" | xargs shellcheck
+        else
+            echo "$shell_files" | xargs shellcheck "${shellcheck_args[@]}"
+        fi
     else
         local shellcheck_output
-        shellcheck_output=$(echo "$shell_files" | xargs shellcheck "${shellcheck_args[@]}" 2>&1)
+        if [[ ${#shellcheck_args[@]} -eq 0 ]]; then
+            shellcheck_output=$(echo "$shell_files" | xargs shellcheck 2>&1)
+        else
+            shellcheck_output=$(echo "$shell_files" | xargs shellcheck "${shellcheck_args[@]}" 2>&1)
+        fi
         local exit_code=$?
 
         if [[ $exit_code -ne 0 ]]; then
