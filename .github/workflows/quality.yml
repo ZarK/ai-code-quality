@@ -49,3 +49,4 @@ jobs:
         ./quality/check.sh
       env:
         SKIP_E2E: 1
+        # Note: Verbose output is automatically enabled when GitHub Actions debug logging is enabled
