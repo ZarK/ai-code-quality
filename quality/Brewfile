@@ -1,2 +1,5 @@
 brew "shellcheck"
 brew "shfmt"
+brew "scc"
+brew "hadolint"
+brew "kubeconform"

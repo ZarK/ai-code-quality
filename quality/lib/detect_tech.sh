@@ -52,6 +52,16 @@ else
     if find . -maxdepth 3 -name "*.sh" -type f | head -1 | grep -q .; then
         DETECTED_TECHS="${DETECTED_TECHS}shell,"
     fi
+
+    # Docker detection
+    if find . -maxdepth 2 -type f -iname "Dockerfile*" | head -1 | grep -q .; then
+        DETECTED_TECHS="${DETECTED_TECHS}docker,"
+    fi
+
+    # Kubernetes detection
+    if find . -name "*.yaml" -o -name "*.yml" -type f -print0 | xargs -0 grep -l "^[[:space:]]*kind:" 2>/dev/null | head -1 | grep -q .; then
+        DETECTED_TECHS="${DETECTED_TECHS}kubernetes,"
+    fi
 fi
 
 echo "${DETECTED_TECHS%,}"

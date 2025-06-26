@@ -49,6 +49,22 @@ if [[ "$TECHS" == *"css"* ]]; then
     fi
 fi
 
+if [[ "$TECHS" == *"docker"* ]]; then
+    debug "Running hadolint..."
+    if ! hadolint_check; then
+        error "hadolint failed"
+        FAILED=1
+    fi
+fi
+
+if [[ "$TECHS" == *"kubernetes"* ]]; then
+    debug "Running kubeconform..."
+    if ! kubeconform_check; then
+        error "kubeconform failed"
+        FAILED=1
+    fi
+fi
+
 if [[ $FAILED -eq 0 ]]; then
     log "All checks passed!"
 fi

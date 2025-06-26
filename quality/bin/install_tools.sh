@@ -25,14 +25,14 @@ check_python_module() {
 }
 
 install_brew_tools() {
-    printf "\nInstalling Homebrew tools (shellcheck, shfmt only)...\n"
+    printf "\nInstalling Homebrew tools...\n"
     if check_command brew; then
         if [[ -f "$QUALITY_DIR/Brewfile" ]]; then
             printf "Running: brew bundle --file=%s/Brewfile\n" "$QUALITY_DIR"
             brew bundle --file="$QUALITY_DIR/Brewfile"
         else
             printf "Brewfile not found, installing individual tools...\n"
-            brew install shellcheck shfmt
+            brew install shellcheck shfmt scc hadolint kubeconform
         fi
     else
         printf "Homebrew not found. Install from: https://brew.sh\n"
@@ -86,7 +86,7 @@ install_node_tools() {
 }
 
 install_linux_tools() {
-    printf "\nInstalling Linux tools (shellcheck, shfmt only)...\n"
+    printf "\nInstalling Linux tools...\n"
     if check_command apt; then
         sudo apt update
         sudo apt install -y shellcheck
@@ -100,8 +100,28 @@ install_linux_tools() {
             chmod +x /tmp/shfmt
             sudo mv /tmp/shfmt /usr/local/bin/shfmt
         fi
+
+        printf "Installing scc...\n"
+        if check_command go; then
+            go install github.com/boyter/scc/v3@latest
+        else
+            curl -L https://github.com/boyter/scc/releases/latest/download/scc-linux-amd64 -o /tmp/scc
+            chmod +x /tmp/scc
+            sudo mv /tmp/scc /usr/local/bin/scc
+        fi
+
+        printf "Installing hadolint...\n"
+        curl -L https://github.com/hadolint/hadolint/releases/latest/download/hadolint-Linux-x86_64 -o /tmp/hadolint
+        chmod +x /tmp/hadolint
+        sudo mv /tmp/hadolint /usr/local/bin/hadolint
+
+        printf "Installing kubeconform...\n"
+        curl -L https://github.com/yannh/kubeconform/releases/latest/download/kubeconform-linux-amd64.tar.gz | tar xz -C /tmp
+        sudo mv /tmp/kubeconform /usr/local/bin/kubeconform
+
     elif check_command yum; then
         sudo yum install -y ShellCheck
+        printf "Please install scc, hadolint, and kubeconform manually on RHEL/CentOS\n"
     else
         printf "Package manager not found. Please install tools manually.\n"
         return 1
@@ -113,7 +133,7 @@ show_status() {
     printf "============\n"
 
     # Check command-line tools
-    cmd_tools=("shellcheck" "shfmt" "node" "bun" "python3" "uv")
+    cmd_tools=("shellcheck" "shfmt" "scc" "hadolint" "kubeconform" "node" "bun" "python3" "uv")
     for tool in "${cmd_tools[@]}"; do
         if check_command "$tool"; then
             printf "✅ %s\n" "$tool"

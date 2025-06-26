@@ -414,3 +414,15 @@ stylelint_check() {
         fi
     fi
 }
+
+hadolint_check() {
+    if find . -maxdepth 2 -type f -iname "Dockerfile*" | head -1 | grep -q .; then
+        find . -maxdepth 2 -type f -iname "Dockerfile*" -print0 | xargs -0 hadolint
+    fi
+}
+
+kubeconform_check() {
+    if find . -name "*.yaml" -o -name "*.yml" -type f -print0 | xargs -0 grep -l "^[[:space:]]*kind:" 2>/dev/null | head -1 | grep -q .; then
+        run_tool "kubeconform" kubeconform -summary -strict .
+    fi
+}
