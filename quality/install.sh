@@ -31,12 +31,52 @@ setup_pre_commit_hook() {
     return 0
 }
 
+setup_github_workflow() {
+    printf "Setting up GitHub Actions workflow...\n"
+
+    if [[ ! -d ".git" ]]; then
+        printf "Error: Not a git repository. GitHub Actions workflow cannot be installed.\n"
+        return 1
+    fi
+
+    local workflow_dir=".github/workflows"
+    local workflow_file="quality.yml"
+    local script_dir
+    script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    local source_workflow="$script_dir/.github/workflows/quality.yml"
+
+    mkdir -p "$workflow_dir"
+
+    if [[ -f "$workflow_dir/$workflow_file" ]]; then
+        mv "$workflow_dir/$workflow_file" "$workflow_dir/$workflow_file.backup.$(date +%s)"
+        printf "Existing workflow backed up\n"
+    fi
+
+    if [[ ! -f "$source_workflow" ]]; then
+        printf "Error: Quality system workflow template not found at %s\n" "$source_workflow"
+        printf "Make sure the quality system is properly installed.\n"
+        return 1
+    fi
+
+    cp "$source_workflow" "$workflow_dir/$workflow_file"
+    printf "GitHub Actions workflow installed successfully\n"
+    printf "Quality checks will now run automatically on push/PR to main/develop branches\n"
+    printf "To disable: rm %s/%s\n" "$workflow_dir" "$workflow_file"
+    return 0
+}
+
 if [[ "${1:-}" == "--setup-hook" ]]; then
     setup_pre_commit_hook
     exit $?
 fi
 
+if [[ "${1:-}" == "--setup-workflow" ]]; then
+    setup_github_workflow
+    exit $?
+fi
+
 SETUP_HOOK=false
+SETUP_WORKFLOW=false
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -44,9 +84,13 @@ while [[ $# -gt 0 ]]; do
         SETUP_HOOK=true
         shift
         ;;
+    --setup-workflow)
+        SETUP_WORKFLOW=true
+        shift
+        ;;
     *)
         printf "Unknown option: %s\n" "$1"
-        printf "Usage: %s [--setup-hook]\n" "$0"
+        printf "Usage: %s [--setup-hook] [--setup-workflow]\n" "$0"
         exit 1
         ;;
     esac
@@ -129,10 +173,17 @@ if [[ "$SETUP_HOOK" == true ]]; then
     setup_pre_commit_hook
 fi
 
+if [[ "$SETUP_WORKFLOW" == true ]]; then
+    printf "\nSetting up GitHub Actions workflow...\n"
+    setup_github_workflow
+fi
+
 printf "\nInstallation complete!\n"
 printf "\nNext steps:\n"
 printf "1. Run checks: ./quality/check.sh\n"
 printf "2. Check specific path: ./quality/check.sh src/\n"
 printf "3. Setup pre-commit hook: ./quality/install.sh --setup-hook\n"
-printf "4. Get help: ./quality/check.sh --help\n"
+printf "4. Setup GitHub Actions: ./quality/install.sh --setup-workflow\n"
+printf "5. Setup both: ./quality/install.sh --setup-hook --setup-workflow\n"
+printf "6. Get help: ./quality/check.sh --help\n"
 printf "\nFor more info, see: %s\n" "$REPO_URL"

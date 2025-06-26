@@ -51,11 +51,20 @@ echo "0" > quality/.phase_progress
 ### Pre-commit Hook Setup
 
 ```bash
-# Setup pre-commit hook
+# Setup pre-commit hook only
 ./quality/install.sh --setup-hook
+
+# Setup GitHub Actions workflow only
+./quality/install.sh --setup-workflow
+
+# Setup both pre-commit hook and GitHub Actions (recommended)
+./quality/install.sh --setup-hook --setup-workflow
 
 # Remove pre-commit hook
 rm .git/hooks/pre-commit
+
+# Remove GitHub Actions workflow
+rm .github/workflows/quality.yml
 ```
 
 ## Quality Stages
@@ -89,7 +98,26 @@ The system includes a pre-configured GitHub Actions workflow that runs all quali
 - Runs all 8 quality stages with proper error reporting
 - Provides detailed debug information for failed stages
 
-See `.github/workflows/quality.yml` for the complete configuration.
+### Installation
+
+```bash
+# Install GitHub Actions workflow
+./quality/install.sh --setup-workflow
+
+# Install both pre-commit hook and GitHub Actions (recommended)
+./quality/install.sh --setup-hook --setup-workflow
+```
+
+The workflow will be installed at `.github/workflows/quality.yml` and will automatically run on:
+- Push to `main` or `develop` branches
+- Pull requests targeting `main` or `develop` branches
+
+### Removal
+
+```bash
+# Remove GitHub Actions workflow
+rm .github/workflows/quality.yml
+```
 
 ## Documentation
 
