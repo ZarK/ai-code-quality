@@ -65,18 +65,9 @@ setup_github_workflow() {
     return 0
 }
 
-if [[ "${1:-}" == "--setup-hook" ]]; then
-    setup_pre_commit_hook
-    exit $?
-fi
-
-if [[ "${1:-}" == "--setup-workflow" ]]; then
-    setup_github_workflow
-    exit $?
-fi
-
 SETUP_HOOK=false
 SETUP_WORKFLOW=false
+INSTALL_SYSTEM=true
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -96,33 +87,43 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-printf "Installing Universal Code Quality System\n"
-printf "=======================================\n"
-
-if [[ -d "$QUALITY_DIR" ]]; then
-    printf "Existing quality directory found. Backing up...\n"
-    mv "$QUALITY_DIR" "${QUALITY_DIR}.backup.$(date +%s)"
+if [[ "$SETUP_HOOK" == true || "$SETUP_WORKFLOW" == true ]]; then
+    INSTALL_SYSTEM=false
 fi
 
-printf "Downloading quality system...\n"
-if command -v git >/dev/null 2>&1; then
-    git clone --depth=1 "$REPO_URL" temp-quality
-    mv temp-quality/quality ./
-    rm -rf temp-quality
+if [[ "$INSTALL_SYSTEM" == true ]]; then
+    printf "Installing Universal Code Quality System\n"
+    printf "=======================================\n"
+
+    if [[ -d "$QUALITY_DIR" ]]; then
+        printf "Existing quality directory found. Backing up...\n"
+        mv "$QUALITY_DIR" "${QUALITY_DIR}.backup.$(date +%s)"
+    fi
 else
-    printf "Error: Git not found. Please install git or download manually.\n"
-    exit 1
+    printf "Running setup commands only...\n"
+    printf "==============================\n"
 fi
 
-printf "Setting up permissions...\n"
-chmod +x quality/bin/*.sh
-chmod +x quality/lib/*.sh
-chmod +x quality/hooks/*
-chmod +x quality/stages/*.sh
-chmod +x quality/check.sh
+if [[ "$INSTALL_SYSTEM" == true ]]; then
+    printf "Downloading quality system...\n"
+    if command -v git >/dev/null 2>&1; then
+        git clone --depth=1 "$REPO_URL" temp-quality
+        mv temp-quality/quality ./
+        rm -rf temp-quality
+    else
+        printf "Error: Git not found. Please install git or download manually.\n"
+        exit 1
+    fi
 
-printf "Creating root check.sh wrapper...\n"
-cat >check.sh <<'EOF'
+    printf "Setting up permissions...\n"
+    chmod +x quality/bin/*.sh
+    chmod +x quality/lib/*.sh
+    chmod +x quality/hooks/*
+    chmod +x quality/stages/*.sh
+    chmod +x quality/check.sh
+
+    printf "Creating root check.sh wrapper...\n"
+    cat >check.sh <<'EOF'
 #!/bin/bash
 
 set -euo pipefail
@@ -147,26 +148,27 @@ cd "$TARGET_PATH"
 
 exec "$QUALITY_DIR/bin/run_checks.sh" "${@:2}"
 EOF
-chmod +x check.sh
+    chmod +x check.sh
 
-printf "Initializing phase tracking...\n"
-echo "0" >quality/.phase_progress
+    printf "Initializing phase tracking...\n"
+    echo "0" >quality/.phase_progress
 
-printf "Updating .gitignore...\n"
-if [[ -f ".gitignore" ]]; then
-    if ! grep -q "^quality/$" .gitignore 2>/dev/null; then
-        printf "\n# Code quality system\nquality/\n" >>.gitignore
-        printf "Added quality/ to .gitignore\n"
+    printf "Updating .gitignore...\n"
+    if [[ -f ".gitignore" ]]; then
+        if ! grep -q "^quality/$" .gitignore 2>/dev/null; then
+            printf "\n# Code quality system\nquality/\n" >>.gitignore
+            printf "Added quality/ to .gitignore\n"
+        else
+            printf "quality/ already in .gitignore\n"
+        fi
     else
-        printf "quality/ already in .gitignore\n"
+        printf "# Code quality system\nquality/\n" >.gitignore
+        printf "Created .gitignore with quality/ entry\n"
     fi
-else
-    printf "# Code quality system\nquality/\n" >.gitignore
-    printf "Created .gitignore with quality/ entry\n"
-fi
 
-printf "\nInstalling quality tools...\n"
-./quality/bin/install_tools.sh
+    printf "\nInstalling quality tools...\n"
+    ./quality/bin/install_tools.sh
+fi
 
 if [[ "$SETUP_HOOK" == true ]]; then
     printf "\nSetting up pre-commit hook...\n"
@@ -178,12 +180,22 @@ if [[ "$SETUP_WORKFLOW" == true ]]; then
     setup_github_workflow
 fi
 
-printf "\nInstallation complete!\n"
-printf "\nNext steps:\n"
-printf "1. Run checks: ./quality/check.sh\n"
-printf "2. Check specific path: ./quality/check.sh src/\n"
-printf "3. Setup pre-commit hook: ./quality/install.sh --setup-hook\n"
-printf "4. Setup GitHub Actions: ./quality/install.sh --setup-workflow\n"
-printf "5. Setup both: ./quality/install.sh --setup-hook --setup-workflow\n"
-printf "6. Get help: ./quality/check.sh --help\n"
-printf "\nFor more info, see: %s\n" "$REPO_URL"
+if [[ "$INSTALL_SYSTEM" == true ]]; then
+    printf "\nInstallation complete!\n"
+    printf "\nNext steps:\n"
+    printf "1. Run checks: ./quality/check.sh\n"
+    printf "2. Check specific path: ./quality/check.sh src/\n"
+    printf "3. Setup pre-commit hook: ./quality/install.sh --setup-hook\n"
+    printf "4. Setup GitHub Actions: ./quality/install.sh --setup-workflow\n"
+    printf "5. Setup both: ./quality/install.sh --setup-hook --setup-workflow\n"
+    printf "6. Get help: ./quality/check.sh --help\n"
+    printf "\nFor more info, see: %s\n" "$REPO_URL"
+else
+    printf "\nSetup complete!\n"
+    if [[ "$SETUP_HOOK" == true ]]; then
+        printf "✅ Pre-commit hook installed\n"
+    fi
+    if [[ "$SETUP_WORKFLOW" == true ]]; then
+        printf "✅ GitHub Actions workflow installed\n"
+    fi
+fi
