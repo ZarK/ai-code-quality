@@ -25,4 +25,20 @@ if [[ "$TECHS" == *"ts"* ]]; then
     fi
 fi
 
+if [[ "$TECHS" == *"dotnet"* ]]; then
+    debug "Running .NET build as type check..."
+    if ! dotnet_build_check; then
+        error ".NET build failed"
+        FAILED=1
+    fi
+fi
+
+if [[ "$TECHS" == *"java"* ]]; then
+    debug "Running Java build as type check..."
+    if ! java_build_check; then
+        error "Java build/type check failed"
+        FAILED=1
+    fi
+fi
+
 exit $FAILED

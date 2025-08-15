@@ -69,6 +69,7 @@ SETUP_HOOK=false
 SETUP_WORKFLOW=false
 INSTALL_SYSTEM=true
 
+DRY_RUN=0
 while [[ $# -gt 0 ]]; do
     case $1 in
     --setup-hook)
@@ -77,6 +78,10 @@ while [[ $# -gt 0 ]]; do
         ;;
     --setup-workflow)
         SETUP_WORKFLOW=true
+        shift
+        ;;
+    --dry-run)
+        DRY_RUN=1
         shift
         ;;
     *)
@@ -97,7 +102,11 @@ if [[ "$INSTALL_SYSTEM" == true ]]; then
 
     if [[ -d "$QUALITY_DIR" ]]; then
         printf "Existing quality directory found. Backing up...\n"
-        mv "$QUALITY_DIR" "${QUALITY_DIR}.backup.$(date +%s)"
+        if [[ $DRY_RUN -eq 1 ]]; then
+            echo "[DRY-RUN] mv $QUALITY_DIR ${QUALITY_DIR}.backup.$(date +%s)"
+        else
+            mv "$QUALITY_DIR" "${QUALITY_DIR}.backup.$(date +%s)"
+        fi
     fi
 else
     printf "Running setup commands only...\n"
@@ -107,23 +116,36 @@ fi
 if [[ "$INSTALL_SYSTEM" == true ]]; then
     printf "Downloading quality system...\n"
     if command -v git >/dev/null 2>&1; then
-        git clone --depth=1 "$REPO_URL" temp-quality
-        mv temp-quality/quality ./
-        rm -rf temp-quality
+        if [[ $DRY_RUN -eq 1 ]]; then
+            echo "[DRY-RUN] git clone --depth=1 $REPO_URL temp-quality"
+            echo "[DRY-RUN] mv temp-quality/quality ./"
+            echo "[DRY-RUN] rm -rf temp-quality"
+        else
+            git clone --depth=1 "$REPO_URL" temp-quality
+            mv temp-quality/quality ./
+            rm -rf temp-quality
+        fi
     else
         printf "Error: Git not found. Please install git or download manually.\n"
         exit 1
     fi
 
     printf "Setting up permissions...\n"
-    chmod +x quality/bin/*.sh
-    chmod +x quality/lib/*.sh
-    chmod +x quality/hooks/*
-    chmod +x quality/stages/*.sh
-    chmod +x quality/check.sh
+    if [[ $DRY_RUN -eq 1 ]]; then
+        echo "[DRY-RUN] chmod +x quality/bin/*.sh quality/lib/*.sh quality/hooks/* quality/stages/*.sh quality/check.sh"
+    else
+        chmod +x quality/bin/*.sh
+        chmod +x quality/lib/*.sh
+        chmod +x quality/hooks/*
+        chmod +x quality/stages/*.sh
+        chmod +x quality/check.sh
+    fi
 
     printf "Creating root check.sh wrapper...\n"
-    cat >check.sh <<'EOF'
+    if [[ $DRY_RUN -eq 1 ]]; then
+        echo "[DRY-RUN] write check.sh wrapper"
+    else
+        cat >check.sh <<'EOF'
 #!/bin/bash
 
 set -euo pipefail
@@ -146,18 +168,30 @@ fi
 
 cd "$TARGET_PATH"
 
-exec "$QUALITY_DIR/bin/run_checks.sh" "${@:2}"
+"$QUALITY_DIR/bin/run_checks.sh" "${@:2}"
 EOF
+    fi
     chmod +x check.sh
 
     printf "Initializing phase tracking...\n"
-    echo "0" >quality/.phase_progress
+    if [[ $DRY_RUN -eq 1 ]]; then
+        echo "[DRY-RUN] initialize quality/.phase_progress"
+    else
+        echo "0" >quality/.phase_progress
+    fi
 
     printf "Updating .gitignore...\n"
     if [[ -f ".gitignore" ]]; then
         if ! grep -q "^quality/$" .gitignore 2>/dev/null; then
-            printf "\n# Code quality system\nquality/\n" >>.gitignore
-            printf "Added quality/ to .gitignore\n"
+            if [[ $DRY_RUN -eq 1 ]]; then
+                echo "[DRY-RUN] append quality/ to .gitignore"
+            else
+                {
+                    printf "\n# Code quality system\n"
+                    printf "quality/\n"
+                } >>.gitignore
+                printf "Added quality/ to .gitignore\n"
+            fi
         else
             printf "quality/ already in .gitignore\n"
         fi
@@ -167,17 +201,29 @@ EOF
     fi
 
     printf "\nInstalling quality tools...\n"
-    ./quality/bin/install_tools.sh
+    if [[ $DRY_RUN -eq 1 ]]; then
+        ./quality/bin/install_tools.sh --dry-run
+    else
+        ./quality/bin/install_tools.sh
+    fi
 fi
 
 if [[ "$SETUP_HOOK" == true ]]; then
     printf "\nSetting up pre-commit hook...\n"
-    setup_pre_commit_hook
+    if [[ $DRY_RUN -eq 1 ]]; then
+        echo "[DRY-RUN] setup pre-commit hook"
+    else
+        setup_pre_commit_hook
+    fi
 fi
 
 if [[ "$SETUP_WORKFLOW" == true ]]; then
     printf "\nSetting up GitHub Actions workflow...\n"
-    setup_github_workflow
+    if [[ $DRY_RUN -eq 1 ]]; then
+        echo "[DRY-RUN] setup GitHub Actions workflow"
+    else
+        setup_github_workflow
+    fi
 fi
 
 if [[ "$INSTALL_SYSTEM" == true ]]; then

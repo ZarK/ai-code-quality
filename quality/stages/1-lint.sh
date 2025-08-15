@@ -49,6 +49,22 @@ if [[ "$TECHS" == *"css"* ]]; then
     fi
 fi
 
+if [[ "$TECHS" == *"java"* ]]; then
+    debug "Running Java checkstyle..."
+    if ! java_checkstyle; then
+        error "Java lint (checkstyle) failed"
+        FAILED=1
+    fi
+fi
+
+if [[ "$TECHS" == *"hcl"* ]]; then
+    debug "Running Terraform/HCL lint..."
+    if ! hcl_lint_check; then
+        error "HCL/Terraform lint failed"
+        FAILED=1
+    fi
+fi
+
 if [[ $FAILED -eq 0 ]]; then
     log "All checks passed!"
 fi

@@ -38,6 +38,21 @@ else
         fi
     fi
 
+    # .NET detection
+    if find . -maxdepth 3 \( -name "*.sln" -o -name "*.csproj" -o -name "global.json" \) -not -path "./node_modules/*" -type f | head -1 | grep -q .; then
+        DETECTED_TECHS="${DETECTED_TECHS}dotnet,"
+    fi
+
+    # Java detection (Maven/Gradle)
+    if find . -maxdepth 3 \( -name "pom.xml" -o -name "build.gradle" -o -name "build.gradle.kts" \) -not -path "./node_modules/*" -type f | head -1 | grep -q .; then
+        DETECTED_TECHS="${DETECTED_TECHS}java,"
+    fi
+
+    # HCL / Terraform detection
+    if find . -maxdepth 4 \( -name "*.tf" -o -name "*.hcl" -o -name "terraform.tfvars" -o -name ".terraform.lock.hcl" \) -not -path "./node_modules/*" -type f | head -1 | grep -q .; then
+        DETECTED_TECHS="${DETECTED_TECHS}hcl,"
+    fi
+
     # HTML detection
     if find . -maxdepth 3 -name "*.html" -not -path "./node_modules/*" -not -path "./.venv/*" -type f | head -1 | grep -q .; then
         DETECTED_TECHS="${DETECTED_TECHS}html,"

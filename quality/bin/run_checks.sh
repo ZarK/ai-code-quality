@@ -14,23 +14,28 @@ get_stage_name() {
     6) echo "complexity" ;;
     7) echo "maintainability" ;;
     8) echo "coverage" ;;
+    9) echo "security" ;;
     *) echo "unknown" ;;
     esac
 }
 
-if "$QUALITY_DIR/bin/phase_checks.sh" "$@" 2>/tmp/failed_stages.txt; then
+FAILED_FILE="/tmp/failed_stages.txt"
+export FAILED_STAGES_FILE="$FAILED_FILE"
+rm -f "$FAILED_FILE"
+
+if "$QUALITY_DIR/bin/phase_checks.sh" "$@"; then
     exit 0
 else
     exit_code=$?
 
-    if [[ -f /tmp/failed_stages.txt ]] && [[ -s /tmp/failed_stages.txt ]]; then
+    if [[ -f "$FAILED_FILE" ]] && [[ -s "$FAILED_FILE" ]]; then
         echo ""
         echo "To debug failed stages, run with verbose output:"
         while read -r stage; do
             stage_name=$(get_stage_name "$stage")
             echo "  $QUALITY_DIR/stages/${stage}-${stage_name}.sh --verbose"
-        done </tmp/failed_stages.txt
-        rm -f /tmp/failed_stages.txt
+        done <"$FAILED_FILE"
+        rm -f "$FAILED_FILE"
     fi
 
     exit $exit_code

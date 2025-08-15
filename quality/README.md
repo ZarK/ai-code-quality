@@ -57,11 +57,15 @@ Run `./bin/install_tools.sh` to install all required quality tools.
 
 ## Supported Technologies
 
-- **Python**: Ruff (lint/format), mypy (types), pytest (test), radon (metrics)
-- **JavaScript/TypeScript**: ESLint (lint), Prettier (format), TypeScript (types), Jest (test)
-- **HTML/CSS**: HTMLHint (lint), Stylelint (lint), Prettier (format)
-- **Shell**: shellcheck (lint), shfmt (format)
-- **E2E Testing**: Playwright (JS/TS), pytest (Python)
+- Python: Ruff (lint/format), mypy (types), pytest (test), radon (metrics)
+- JavaScript/TypeScript: Biome/ESLint (lint), Biome/Prettier (format), TypeScript (types), Vitest/Jest (test)
+- HTML/CSS: HTMLHint (lint), Stylelint (lint), Prettier (format)
+- Shell: shellcheck (lint), shfmt (format)
+- .NET: dotnet format (format), dotnet build (types), dotnet test (+ Coverlet if configured)
+- Java (Maven/Gradle): Checkstyle (lint), google-java-format (format check), build (types), test (+ JaCoCo if configured)
+- HCL/Terraform: terraform fmt/hclfmt (format check), tflint (lint)
+- Security: gitleaks (secrets), semgrep (SAST), tfsec (Terraform security) if installed
+- E2E Testing: Playwright (JS/TS), pytest (Python)
 
 ## Documentation
 
