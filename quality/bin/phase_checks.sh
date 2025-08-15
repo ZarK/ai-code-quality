@@ -18,7 +18,7 @@ set_current_stage() {
 }
 
 get_available_stages() {
-    echo "0 1 2 3 4 5 6 7 8"
+    echo "0 1 2 3 4 5 6 7 8 9"
 }
 
 get_stage_name() {
@@ -32,6 +32,7 @@ get_stage_name() {
     6) echo "complexity" ;;
     7) echo "maintainability" ;;
     8) echo "coverage" ;;
+    9) echo "security" ;;
     *) echo "unknown" ;;
     esac
 }
@@ -84,7 +85,11 @@ main() {
         fi
         exit 0
     else
-        printf "%s\n" "${failed_stages[@]}" >&2
+        if [[ -n "${FAILED_STAGES_FILE:-}" ]]; then
+            printf "%s\n" "${failed_stages[@]}" >"$FAILED_STAGES_FILE"
+        else
+            printf "%s\n" "${failed_stages[@]}" 1>&2
+        fi
         exit 1
     fi
 }

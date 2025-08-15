@@ -33,4 +33,28 @@ if [[ "$TECHS" == *"shell"* ]]; then
     fi
 fi
 
+if [[ "$TECHS" == *"dotnet"* ]]; then
+    debug "Running dotnet format check..."
+    if ! dotnet_format_check; then
+        error ".NET format check failed"
+        FAILED=1
+    fi
+fi
+
+if [[ "$TECHS" == *"java"* ]]; then
+    debug "Running google-java-format check..."
+    if ! java_format_check; then
+        error "Java format check failed"
+        FAILED=1
+    fi
+fi
+
+if [[ "$TECHS" == *"hcl"* ]]; then
+    debug "Running HCL/Terraform format check..."
+    if ! hcl_format_check; then
+        error "HCL/Terraform format check failed"
+        FAILED=1
+    fi
+fi
+
 exit $FAILED

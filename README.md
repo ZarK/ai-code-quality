@@ -29,8 +29,21 @@ echo "0" > quality/.phase_progress
 - **Pre-commit Ready**: Includes Git pre-commit hook integration
 - **Technology-Aware**: Only runs relevant checks for detected technologies
 - **Opinionated**: Sensible defaults that work out of the box
+- **Broader language support**: Python, JS/TS, HTML/CSS, Shell, .NET, Java, HCL/Terraform
+- **Security built-in**: Secrets scanning (gitleaks), SAST (semgrep), IaC scanning (tfsec if available)
 
 ## Usage
+
+Dependency check and dry-run
+
+- Check what tools you need for your project:
+  ./quality/bin/check_dependencies.sh
+
+- Preview what would be installed (no changes):
+  ./quality/bin/install_tools.sh --dry-run
+
+- Preview install/setup actions:
+  ./quality/install.sh --dry-run --setup-hook --setup-workflow
 
 ### Basic Commands
 
@@ -77,17 +90,22 @@ The system runs 9 stages in order (0-8):
 3. **Type Check**: Static type checking (TypeScript, mypy)
 4. **Unit Test**: Unit testing (Jest, pytest)
 5. **SLOC**: Source lines of code analysis
-6. **Complexity**: Cyclomatic complexity analysis (Radon)
-7. **Maintainability**: Code maintainability metrics (Radon)
+6. **Complexity**: Cyclomatic complexity analysis (Radon for Python; Lizard for .NET/Java/JS/TS/Go)
+7. **Maintainability**: Code maintainability metrics (Radon for Python; Lizard proxy for .NET/Java/JS/TS/Go)
 8. **Coverage**: Test coverage analysis (Jest, pytest-cov)
 
 ## Supported Technologies
 
-- **Python**: Ruff (lint/format), mypy (types), pytest (test), radon (metrics)
-- **JavaScript/TypeScript**: ESLint (lint), Prettier (format), TypeScript (types), Jest (test)
-- **HTML/CSS**: HTMLHint (lint), Stylelint (lint), Prettier (format)
-- **Shell**: shellcheck (lint), shfmt (format)
-- **E2E Testing**: Playwright (JS/TS), pytest (Python)
+- Python: Ruff (lint/format), mypy (types), pytest (test), radon (SLOC/CCN/MI)
+- JavaScript/TypeScript: Biome/ESLint (lint), Biome/Prettier (format), TypeScript (types), Vitest/Jest (test), Lizard (SLOC/CCN/maintainability proxy)
+- HTML/CSS: HTMLHint (lint), Stylelint (lint), Prettier (format)
+- Shell: shellcheck (lint), shfmt (format)
+- .NET: dotnet format (format), dotnet build (types), dotnet test (+ Coverlet if configured), Lizard (SLOC/CCN/maintainability proxy)
+- Java (Maven/Gradle): Checkstyle (lint), google-java-format (format check), build (types), test (+ JaCoCo if configured), Lizard (SLOC/CCN/maintainability proxy)
+- Go: Lizard (SLOC/CCN/maintainability proxy)
+- HCL/Terraform: terraform fmt/hclfmt (format check), tflint (lint)
+- Security: gitleaks (secrets), semgrep (SAST), tfsec (Terraform security) if installed
+- E2E Testing: Playwright (JS/TS), pytest (Python)
 
 ## GitHub Actions Integration
 
@@ -123,6 +141,8 @@ rm .github/workflows/quality.yml
 
 - [Stage System Details](docs/STAGE_SYSTEM.md)
 - [E2E Integration Guide](docs/E2E_INTEGRATION.md)
+- Security and IaC: Secrets scanning (gitleaks), SAST (semgrep), Terraform (tflint/tfsec)
+- Cross-platform setup: macOS (brew), Linux (apt/yum), Windows (winget/scoop guidance)
 
 ## Project Structure
 

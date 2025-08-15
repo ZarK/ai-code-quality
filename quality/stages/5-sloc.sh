@@ -17,4 +17,13 @@ if [[ "$TECHS" == *"python"* ]]; then
     fi
 fi
 
+# Lizard-powered SLOC for non-Python languages
+if [[ "$TECHS" == *"dotnet"* || "$TECHS" == *"java"* || "$TECHS" == *"js"* || "$TECHS" == *"ts"* || "$TECHS" == *"react"* || "$TECHS" == *"go"* ]]; then
+    debug "Running lizard SLOC checks for detected non-Python languages..."
+    if ! lizard_sloc_multi; then
+        error "lizard SLOC check failed"
+        FAILED=1
+    fi
+fi
+
 exit $FAILED

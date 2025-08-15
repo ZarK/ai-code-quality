@@ -25,4 +25,20 @@ if [[ "$TECHS" == *"js"* || "$TECHS" == *"ts"* || "$TECHS" == *"react"* ]]; then
     fi
 fi
 
+if [[ "$TECHS" == *"dotnet"* ]]; then
+    debug "Running .NET unit tests..."
+    if ! dotnet_test; then
+        error ".NET unit tests failed"
+        FAILED=1
+    fi
+fi
+
+if [[ "$TECHS" == *"java"* ]]; then
+    debug "Running Java unit tests..."
+    if ! java_test; then
+        error "Java unit tests failed"
+        FAILED=1
+    fi
+fi
+
 exit $FAILED

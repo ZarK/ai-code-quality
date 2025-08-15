@@ -25,4 +25,20 @@ if [[ "$TECHS" == *"js"* || "$TECHS" == *"ts"* || "$TECHS" == *"react"* ]]; then
     fi
 fi
 
+if [[ "$TECHS" == *"dotnet"* ]]; then
+    debug "Running .NET coverage (coverlet if configured)..."
+    if ! dotnet_coverage; then
+        error ".NET coverage failed"
+        FAILED=1
+    fi
+fi
+
+if [[ "$TECHS" == *"java"* ]]; then
+    debug "Running Java coverage (JaCoCo if configured)..."
+    if ! java_coverage; then
+        error "Java coverage failed"
+        FAILED=1
+    fi
+fi
+
 exit $FAILED
