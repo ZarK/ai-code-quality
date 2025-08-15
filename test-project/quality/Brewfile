@@ -1,2 +1,0 @@
-brew "shellcheck"
-brew "shfmt"
