@@ -124,9 +124,42 @@ async function resolveQualityPaths() {
   process.exit(2);
 }
 
+function computeStagePlan(cfg, prog, args) {
+  const defaults = [0,1,2,3,4,5,6,7,8,9];
+  const order = (cfg?.stages?.order ?? prog?.order ?? defaults).filter(n => defaults.includes(n));
+  const disabled = new Set([...(cfg?.stages?.disabled ?? []), ...(prog?.disabled ?? [])]);
+  let target = order;
+  if (Number.isInteger(args.upTo)) target = order.filter(n => n <= args.upTo);
+  if (Number.isInteger(args.only)) target = [args.only];
+  return target.filter(n => !disabled.has(n));
+}
+
+function envFromOverrides(cfg) {
+  const env = {};
+  const o5 = cfg?.overrides?.[5];
+  const o6 = cfg?.overrides?.[6];
+  const o7 = cfg?.overrides?.[7];
+  if (o5?.sloc_limit) env.LIZARD_SLOC_LIMIT = String(o5.sloc_limit);
+  if (o6?.ccn_limit) env.LIZARD_CCN_LIMIT = String(o6.ccn_limit);
+  if (o7?.ccn_strict) env.LIZARD_CCN_STRICT = String(o7.ccn_strict);
+  if (o7?.fn_nloc_limit) env.LIZARD_FN_NLOC_LIMIT = String(o7.fn_nloc_limit);
+  if (o7?.param_limit) env.LIZARD_PARAM_LIMIT = String(o7.param_limit);
+  return env;
+}
+
 async function cmdRun(args) {
   const { check, stages } = await resolveQualityPaths();
+  const cfg = loadJSON(CONFIG_FILE, {});
+  const prog = loadJSON(PROGRESS_FILE, {});
+  const plan = computeStagePlan(cfg, prog, args);
+  const envOverrides = envFromOverrides(cfg);
 
+  const stageFiles = {
+    0: '0-e2e.sh', 1: '1-lint.sh', 2: '2-format.sh', 3: '3-type_check.sh', 4: '4-unit_test.sh',
+    5: '5-sloc.sh', 6: '6-complexity.sh', 7: '7-maintainability.sh', 8: '8-coverage.sh', 9: '9-security.sh'
+  };
+
+  // If running a single stage (only), just run it
   if (Number.isInteger(args.only)) {
     const n = args.only;
     const stageFiles = {
@@ -141,15 +174,30 @@ async function cmdRun(args) {
     const stageArgs = [];
     if (args.verbose) stageArgs.push('--verbose');
     if (args.dryRun) stageArgs.push('--dry-run');
-    const code = await runCommand(join(stages, f), stageArgs);
+    const code = await runCommand(join(stages, f), stageArgs, { env: { ...process.env, ...envOverrides } });
     process.exit(code);
   }
 
+  // Otherwise, run the planned stages in order (respects disabled/order)
+  if (plan && plan.length) {
+    for (const n of plan) {
+      const f = stageFiles[n];
+      if (!f || !existsSync(join(stages, f))) continue;
+      const stageArgs = [];
+      if (args.verbose) stageArgs.push('--verbose');
+      if (args.dryRun) stageArgs.push('--dry-run');
+      const code = await runCommand(join(stages, f), stageArgs, { env: { ...process.env, ...envOverrides } });
+      if (code !== 0) process.exit(code);
+    }
+    process.exit(0);
+  }
+
+  // Fallback: run full pipeline via check.sh
   const checkArgs = [];
   if (Number.isInteger(args.upTo)) checkArgs.push(String(args.upTo));
   if (args.verbose) checkArgs.push('--verbose');
   if (args.dryRun) checkArgs.push('--dry-run');
-  const code = await runCommand(check, checkArgs);
+  const code = await runCommand(check, checkArgs, { env: { ...process.env, ...envOverrides } });
   process.exit(code);
 }
 
