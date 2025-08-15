@@ -131,6 +131,68 @@ async function cmdRun(args) {
   process.exit(code);
 }
 
+async function cmdHook(args) {
+  // Install pre-commit hook that runs up to current_stage (from .aiq/progress.json)
+  const hookDir = join(CWD, '.git', 'hooks');
+  const hookPath = join(hookDir, 'pre-commit');
+  ensureDir(hookDir);
+  const prog = loadJSON(PROGRESS_FILE, { current_stage: 1 });
+  const upTo = Number.isInteger(prog.current_stage) ? prog.current_stage : 1;
+  const script = `#!/usr/bin/env bash\nset -euo pipefail\n# aiq pre-commit hook\nAIQ_BIN=aiq\nif command -v npx >/dev/null 2>&1; then\n  npx @tjalve/aiq run --up-to ${upTo}\nelse\n  $AIQ_BIN run --up-to ${upTo}\nfi\n`;
+  writeFileSync(hookPath, script, { mode: 0o755 });
+  println(`Installed pre-commit hook -> ${hookPath}`);
+}
+
+async function cmdCI(args) {
+  // Write a minimal GH Actions workflow that uses npx @tjalve/aiq run
+  const wfDir = join(CWD, '.github', 'workflows');
+  const wfPath = join(wfDir, 'quality.yml');
+  ensureDir(wfDir);
+  const yaml = `name: Quality\n\non:\n  pull_request:\n  push:\n    branches: [ main, develop ]\n\njobs:\n  quality:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n      - name: Setup Node\n        uses: actions/setup-node@v4\n        with:\n          node-version: 'lts/*'\n          cache: 'npm'\n      - name: Run quality\n        run: npx @tjalve/aiq run\n`;
+  writeFileSync(wfPath, yaml);
+  println(`Wrote workflow -> ${wfPath}`);
+}
+
+async function cmdIgnore(args) {
+  // Append idempotent ignore block based on common folders
+  const giPath = join(CWD, '.gitignore');
+  const blockStart = '# aiq-ignore-start';
+  const blockEnd = '# aiq-ignore-end';
+  const entries = [
+    'node_modules/', '.venv/', 'dist/', 'build/', 'target/', 'bin/', 'obj/', '__pycache__/'
+  ];
+  let content = existsSync(giPath) ? readFileSync(giPath, 'utf8') : '';
+  const block = `${blockStart}\n${entries.join('\n')}\n${blockEnd}\n`;
+  if (!content.includes(blockStart)) {
+    content += (content.endsWith('\n') ? '' : '\n') + block;
+    writeFileSync(giPath, content);
+    println(`Appended ignore block to ${giPath}`);
+  } else {
+    println('aiq ignore block already present in .gitignore');
+  }
+}
+
+async function cmdDoctor(args) {
+  println('Environment diagnostics:');
+  const checks = [
+    ['node', ['--version']],
+    ['bunx', ['--version']],
+    ['npx', ['--version']],
+    ['uvx', ['--version']],
+    ['dotnet', ['--info']],
+  ];
+  for (const [cmd, cargs] of checks) {
+    const ok = existsSync('/usr/bin/env'); // dummy; we'll try to run anyway
+    println(`- ${cmd}:`);
+    try {
+      const code = await runCommand(cmd, cargs);
+      if (code !== 0) eprintln(`  ${cmd} returned ${code}`);
+    } catch {
+      eprintln(`  ${cmd} not available`);
+    }
+  }
+}
+
 function cmdConfig(args) {
   if (args.printConfig) {
     const cfg = loadJSON(CONFIG_FILE, {});
@@ -175,6 +237,21 @@ function cmdConfig(args) {
 }
 
 function help() {
+  println(`@tjalve/aiq CLI
+
+Usage:
+  aiq run [--only N | --up-to N] [--verbose] [--dry-run]
+  aiq config [--print-config | --set-stage N]
+  aiq hook install
+  aiq ci setup
+  aiq ignore write
+  aiq doctor
+
+Notes:
+  - In local dev, set AIQ_DEV_MODE=1 to warm cache from ./quality.
+  - In production npx, embedded assets will be resolved from package cache.
+`);
+}
   println(`@tjalve/aiq CLI (scaffold)
 
 Usage:
@@ -190,10 +267,14 @@ Notes:
 async function main() {
   const args = parseArgs(process.argv);
   if (args.help || args._.length === 0) return help();
-  const cmd = args._[0];
+  const [cmd, sub] = args._;
   if (cmd === 'run') return cmdRun(args);
   if (cmd === 'config') return cmdConfig(args);
-  eprintln(`[ERROR] Unknown command: ${cmd}`);
+  if (cmd === 'hook' && sub === 'install') return cmdHook(args);
+  if (cmd === 'ci' && sub === 'setup') return cmdCI(args);
+  if (cmd === 'ignore' && sub === 'write') return cmdIgnore(args);
+  if (cmd === 'doctor') return cmdDoctor(args);
+  eprintln(`[ERROR] Unknown command: ${args._.join(' ')}`);
   help();
   process.exit(2);
 }
