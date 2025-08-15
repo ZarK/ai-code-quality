@@ -1,11 +1,12 @@
 {
-  "name": "@tjalve/quality",
+  "name": "@tjalve/aiq",
   "version": "0.1.0",
   "private": false,
   "type": "module",
   "description": "Universal quality runner (staged pipeline) as an ephemeral npx CLI.",
   "bin": {
-    "quality": "bin/quality.js"
+    "aiq": "bin/aiq.js",
+    "quality": "bin/aiq.js"
   },
   "scripts": {
     "dev": "node bin/quality.js --help"

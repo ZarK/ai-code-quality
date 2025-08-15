@@ -1,11 +1,11 @@
-# @tjalve/quality (scaffold)
+# @tjalve/aiq (scaffold)
 
 Ephemeral, npx-friendly quality runner for the 9-stage pipeline. No quality/ copy into repos.
 
 Quickstart
-- npx @tjalve/quality run
-- npx @tjalve/quality config --print-config
-- npx @tjalve/quality config --set-stage 6
+- npx @tjalve/aiq run
+- npx @tjalve/aiq config --print-config
+- npx @tjalve/aiq config --set-stage 6
 
 Commands (initial)
 - run: delegates to local quality/ scripts for now. In npx, will run embedded stages from cache.
