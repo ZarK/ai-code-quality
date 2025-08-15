@@ -1,0 +1,31 @@
+name: Publish @tjalve/aiq
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  publish:
+    name: Publish to npm
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 'lts/*'
+          registry-url: 'https://registry.npmjs.org'
+          cache: 'npm'
+      - name: Build package assets
+        working-directory: packages/quality-cli
+        run: |
+          npm ci || true
+          npm run build
+      - name: Publish
+        working-directory: packages/quality-cli
+        run: |
+          npm publish --provenance --access public

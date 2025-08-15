@@ -69,8 +69,9 @@ Run `./bin/install_tools.sh` to install all required quality tools.
 
 ## Documentation
 
-- [Stage System Details](../docs/STAGE_SYSTEM.md)
-- [E2E Integration Guide](../docs/E2E_INTEGRATION.md)
+- Start here: ../docs/README.md
+- Stage System Details: ../docs/stage_system.md
+- E2E Integration Guide: ../docs/e2e_integration.md
 
 ## Project Structure
 

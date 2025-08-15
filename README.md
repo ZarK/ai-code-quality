@@ -139,8 +139,9 @@ rm .github/workflows/quality.yml
 
 ## Documentation
 
-- [Stage System Details](docs/STAGE_SYSTEM.md)
-- [E2E Integration Guide](docs/E2E_INTEGRATION.md)
+- Start here: docs/README.md
+- Stage System Details: docs/stage_system.md
+- E2E Integration Guide: docs/e2e_integration.md
 - Security and IaC: Secrets scanning (gitleaks), SAST (semgrep), Terraform (tflint/tfsec)
 - Cross-platform setup: macOS (brew), Linux (apt/yum), Windows (winget/scoop guidance)
 

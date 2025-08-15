@@ -58,6 +58,28 @@ detect_tech() {
     "$QUALITY_DIR/lib/detect_tech.sh"
 }
 
+# If diff-only is requested, read changed files list
+_read_changed_filelist() {
+    local list_file="${AIQ_CHANGED_FILELIST:-}"
+    if [[ -n "$list_file" && -f "$list_file" ]]; then
+        cat "$list_file"
+    fi
+}
+
+_changed_files_by_ext() {
+    local ext_regex="$1" # e.g. '\.py$'
+    if [[ "${AIQ_CHANGED_ONLY:-}" != "1" ]]; then
+        return 1
+    fi
+    local list
+    list=$(_read_changed_filelist | grep -E "$ext_regex" || true)
+    if [[ -n "$list" ]]; then
+        printf '%s\n' "$list"
+        return 0
+    fi
+    return 1
+}
+
 run_tool() {
     local tool_name="$1"
     shift
@@ -78,6 +100,17 @@ run_tool() {
 }
 
 ruff_check() {
+    # Diff-only: limit to changed .py files if provided
+    local files
+    files=$(_changed_files_by_ext '\.py$') || files=""
+    if [[ -n "$files" ]]; then
+        if command -v ruff >/dev/null 2>&1; then
+            run_tool "ruff" ruff check "$files"
+        else
+            run_tool "ruff" .venv/bin/ruff check "$files"
+        fi
+        return $?
+    fi
     if command -v ruff >/dev/null 2>&1; then
         run_tool "ruff" ruff check .
     else
@@ -86,6 +119,16 @@ ruff_check() {
 }
 
 ruff_format() {
+    local files
+    files=$(_changed_files_by_ext '\.py$') || files=""
+    if [[ -n "$files" ]]; then
+        if command -v ruff >/dev/null 2>&1; then
+            run_tool "ruff" ruff format --check "$files"
+        else
+            run_tool "ruff" .venv/bin/ruff format --check "$files"
+        fi
+        return $?
+    fi
     if command -v ruff >/dev/null 2>&1; then
         run_tool "ruff" ruff format --check .
     else
@@ -93,7 +136,35 @@ ruff_format() {
     fi
 }
 
+# Utility: detect python source files (excluding common vendor dirs)
+python_files_present() {
+    find . \
+        -type f -name "*.py" \
+        -not -path "*/.venv/*" \
+        -not -path "*/node_modules/*" \
+        -not -path "*/.git/*" \
+        -not -path "*/__pycache__/*" \
+        -not -path "*/.pytest_cache/*" \
+        -not -path "*/.mypy_cache/*" | head -1 | grep -q .
+}
+
+# Utility: detect python test files
+python_tests_present() {
+    find . \
+        -type f \( -name "test_*.py" -o -name "*_test.py" \) \
+        -not -path "*/.venv/*" \
+        -not -path "*/node_modules/*" \
+        -not -path "*/.git/*" \
+        -not -path "*/__pycache__/*" \
+        -not -path "*/.pytest_cache/*" \
+        -not -path "*/.mypy_cache/*" | head -1 | grep -q .
+}
+
 mypy_check() {
+    if ! python_files_present; then
+        debug "No Python files detected; skipping mypy"
+        return 0
+    fi
     if command -v mypy >/dev/null 2>&1; then
         run_tool "mypy" mypy . --config-file "$QUALITY_DIR/configs/python/mypy.ini"
     else
@@ -102,6 +173,10 @@ mypy_check() {
 }
 
 pytest_unit() {
+    if ! python_tests_present; then
+        debug "No Python tests detected; skipping pytest"
+        return 0
+    fi
     if command -v pytest >/dev/null 2>&1; then
         run_tool "pytest" pytest
     else
@@ -110,6 +185,10 @@ pytest_unit() {
 }
 
 pytest_coverage() {
+    if ! python_tests_present; then
+        debug "No Python tests detected; skipping pytest coverage"
+        return 0
+    fi
     if command -v pytest >/dev/null 2>&1; then
         run_tool "pytest" pytest --cov=. --cov-report=term-missing
     else
@@ -328,6 +407,16 @@ PY
 }
 
 biome_check() {
+    local files
+    files=$(_changed_files_by_ext '\.(js|jsx|ts|tsx)$') || files=""
+    if [[ -n "$files" ]]; then
+        if command -v bunx >/dev/null 2>&1; then
+            run_tool "biome" bunx biome check --reporter=summary "$files"
+        else
+            run_tool "biome" npx @biomejs/biome check --reporter=summary "$files"
+        fi
+        return $?
+    fi
     if command -v bunx >/dev/null 2>&1; then
         run_tool "biome" bunx biome check --reporter=summary .
     else
@@ -336,6 +425,16 @@ biome_check() {
 }
 
 biome_format() {
+    local files
+    files=$(_changed_files_by_ext '\.(js|jsx|ts|tsx)$') || files=""
+    if [[ -n "$files" ]]; then
+        if command -v bunx >/dev/null 2>&1; then
+            run_tool "biome" bunx @biomejs/biome check --formatter-enabled=true --linter-enabled=false --organize-imports-enabled=false "$files"
+        else
+            run_tool "biome" npx @biomejs/biome check --formatter-enabled=true --linter-enabled=false --organize-imports-enabled=false "$files"
+        fi
+        return $?
+    fi
     if command -v bunx >/dev/null 2>&1; then
         run_tool "biome" bunx @biomejs/biome check --formatter-enabled=true --linter-enabled=false --organize-imports-enabled=false .
     else
@@ -510,6 +609,7 @@ _lizard_lang_flags() {
 _lizard_run_json() {
     local techs="$1"
     shift
+    local lang_flags
     lang_flags=$(_lizard_lang_flags "$techs")
     # If no supported langs in techs, no-op
     if [[ -z "$lang_flags" ]]; then
@@ -524,7 +624,16 @@ _lizard_run_json() {
     # language flags
     # shellcheck disable=SC2206
     args+=($lang_flags)
-    args+=(".")
+
+    # Diff-only: pass changed files instead of '.' when available
+    if [[ "${AIQ_CHANGED_ONLY:-}" == "1" ]] && [[ -n "${AIQ_CHANGED_FILELIST:-}" ]] && [[ -f "${AIQ_CHANGED_FILELIST}" ]]; then
+        while IFS= read -r f; do
+            # include only matching source files for selected languages; let lizard ignore others
+            args+=("$f")
+        done <"${AIQ_CHANGED_FILELIST}"
+    else
+        args+=(".")
+    fi
 
     debug "Running Lizard JSON with args: ${args[*]}"
     _lizard_uvx "${args[@]}"
