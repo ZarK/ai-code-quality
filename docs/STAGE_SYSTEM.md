@@ -44,16 +44,19 @@ The code quality system has been restructured into 9 focused stages (0-8) that r
 **Purpose**: Source Lines of Code limits (files must be < 350 lines)
 **Tools**:
 - Python: `radon raw` with SLOC analysis
+- .NET/Java/JS/TS/Go: `lizard -j` (aggregated per-file NLOC)
 
 ### Stage 6: Complexity
 **Purpose**: Cyclomatic complexity analysis (only A/B grades allowed)
 **Tools**:
 - Python: `radon cc` (fails on C/D/E/F grades)
+- .NET/Java/JS/TS/Go: `lizard -j` (fails if function CCN > threshold; default 12)
 
 ### Stage 7: Maintainability
 **Purpose**: Maintainability and readability metrics
 **Tools**:
 - Python: `radon mi` (maintainability index ≥40) + custom readability index (≥85)
+- .NET/Java/JS/TS/Go: Lizard proxy (CCN ≤10, function NLOC ≤200, params ≤6 by default)
 
 ### Stage 8: Coverage
 **Purpose**: Test coverage analysis

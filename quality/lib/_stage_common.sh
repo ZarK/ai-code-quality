@@ -5,6 +5,7 @@ QUALITY_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 VERBOSE=0
 QUIET=0
+DRY_RUN=0
 
 if [[ "${ACTIONS_STEP_DEBUG:-}" == "true" ]] || [[ "${ACTIONS_RUNNER_DEBUG:-}" == "true" ]]; then
     VERBOSE=1
@@ -22,6 +23,10 @@ parse_flags() {
         -q | --quiet)
             QUIET=1
             VERBOSE=0
+            shift
+            ;;
+        --dry-run)
+            DRY_RUN=1
             shift
             ;;
         *)
@@ -58,6 +63,12 @@ run_tool() {
     shift
 
     debug "Running: $tool_name $*"
+
+    if [[ $DRY_RUN -eq 1 ]]; then
+        # In dry-run, print the command and return success
+        echo "[DRY-RUN] $tool_name $*"
+        return 0
+    fi
 
     if [[ $VERBOSE -eq 1 ]]; then
         "$@"
@@ -108,10 +119,22 @@ pytest_coverage() {
 
 radon_sloc() {
     local radon_output
+    local files
+    files=$(find . \
+        -type f -name "*.py" \
+        -not -path "*/.venv/*" \
+        -not -path "*/node_modules/*" \
+        -not -path "*/.git/*" \
+        -not -path "*/__pycache__/*" \
+        -not -path "*/.pytest_cache/*" \
+        -not -path "*/.mypy_cache/*" -print0)
+    if [[ -z "$files" ]]; then
+        return 0
+    fi
     if command -v radon >/dev/null 2>&1; then
-        radon_output=$(radon raw .)
+        radon_output=$(printf "%s" "$files" | xargs -0 radon raw)
     else
-        radon_output=$(.venv/bin/radon raw .)
+        radon_output=$(printf "%s" "$files" | xargs -0 .venv/bin/radon raw)
     fi
 
     if [[ $VERBOSE -eq 1 ]]; then
@@ -412,5 +435,473 @@ stylelint_check() {
         else
             run_tool "stylelint" npx stylelint "**/*.css"
         fi
+    fi
+}
+
+# --------------------
+# .NET helpers
+# --------------------
+
+# --------------------
+# Lizard integration (multi-language, internal only)
+# --------------------
+# Uses uvx to avoid global installs, parses JSON to enforce thresholds.
+# Supported languages mapped from detect_tech():
+#  - dotnet -> csharp
+#  - java   -> java
+#  - js/ts  -> javascript, typescript
+#  - go     -> go
+#  - python -> python (we still prefer radon for Python, so default off unless explicitly asked)
+
+LIZARD_EXCLUDES=(
+    "*/.git/*"
+    "*/node_modules/*"
+    "*/.venv/*"
+    "*/dist/*"
+    "*/build/*"
+    "*/target/*"
+    "*/bin/*"
+    "*/obj/*"
+    "*/__pycache__/*"
+)
+
+# Thresholds (can later move to configs)
+# Stage 5: SLOC (approx via file NLOC aggregate)
+LIZARD_SLOC_LIMIT=${LIZARD_SLOC_LIMIT:-350}
+# Stage 6: Complexity
+LIZARD_CCN_LIMIT=${LIZARD_CCN_LIMIT:-12}
+# Stage 7: Stricter maintainability proxy
+LIZARD_CCN_STRICT=${LIZARD_CCN_STRICT:-10}
+LIZARD_FN_NLOC_LIMIT=${LIZARD_FN_NLOC_LIMIT:-200}
+LIZARD_PARAM_LIMIT=${LIZARD_PARAM_LIMIT:-6}
+
+_lizard_uvx() {
+    if command -v uvx >/dev/null 2>&1; then
+        uvx lizard "$@"
+    else
+        echo "Lizard requires uv to run (uvx not found). Please install uv from https://astral.sh/uv" >&2
+        return 127
+    fi
+}
+
+# Build -l flags from a TECHS string
+_lizard_lang_flags() {
+    local techs="$1"
+    local flags=()
+    if [[ "$techs" == *"dotnet"* ]]; then
+        flags+=("-l" "csharp")
+    fi
+    if [[ "$techs" == *"java"* ]]; then
+        flags+=("-l" "java")
+    fi
+    if [[ "$techs" == *"js"* || "$techs" == *"react"* ]]; then
+        flags+=("-l" "javascript")
+    fi
+    if [[ "$techs" == *"ts"* || "$techs" == *"react"* ]]; then
+        flags+=("-l" "typescript")
+    fi
+    if [[ "$techs" == *"go"* ]]; then
+        flags+=("-l" "go")
+    fi
+    echo "${flags[@]}"
+}
+
+# Common runner to emit JSON for selected languages; stdout = JSON
+_lizard_run_json() {
+    local techs="$1"
+    shift
+    lang_flags=$(_lizard_lang_flags "$techs")
+    # If no supported langs in techs, no-op
+    if [[ -z "$lang_flags" ]]; then
+        return 0
+    fi
+
+    local args=("-j")
+    # Excludes
+    for ex in "${LIZARD_EXCLUDES[@]}"; do
+        args+=("-x" "$ex")
+    done
+    # language flags
+    # shellcheck disable=SC2206
+    args+=($lang_flags)
+    args+=(".")
+
+    debug "Running Lizard JSON with args: ${args[*]}"
+    _lizard_uvx "${args[@]}"
+}
+
+# Stage 5: SLOC check via aggregated file NLOC
+lizard_sloc_multi() {
+    local techs
+    if [[ -n "${LIZARD_FORCE_TECHS:-}" ]]; then
+        techs="$LIZARD_FORCE_TECHS"
+    else
+        techs=$(detect_tech)
+    fi
+    local json
+    if ! json=$(_lizard_run_json "$techs"); then
+        return 1
+    fi
+    if [[ -z "$json" ]]; then
+        # Nothing to check
+        return 0
+    fi
+
+    if [[ $VERBOSE -eq 1 ]]; then
+        echo "$json" | python3 -c '
+import json, sys, collections
+limit = int(sys.argv[1])
+data = json.load(sys.stdin)
+by_file = collections.defaultdict(int)
+for item in data:
+    fn = item.get("filename") or item.get("path")
+    nloc = item.get("nloc") or 0
+    if fn:
+        by_file[fn] += int(nloc)
+failed = []
+for fn, total in sorted(by_file.items()):
+    print(f"{fn}: total NLOC ~ {total}")
+    if total >= limit:
+        failed.append((fn, total))
+if failed:
+    print("\nFiles exceeding SLOC limit:", file=sys.stderr)
+    for fn, total in failed:
+        print(f"{fn}: {total} >= {limit}", file=sys.stderr)
+    sys.exit(1)
+' "$LIZARD_SLOC_LIMIT"
+    else
+        echo "$json" | python3 -c '
+import json, sys, collections
+limit = int(sys.argv[1])
+data = json.load(sys.stdin)
+by_file = collections.defaultdict(int)
+for item in data:
+    fn = item.get("filename") or item.get("path")
+    nloc = item.get("nloc") or 0
+    if fn:
+        by_file[fn] += int(nloc)
+failed = [(fn, n) for fn, n in by_file.items() if n >= limit]
+if failed:
+    for fn, total in failed:
+        print(f"{fn}: {total} >= {limit}", file=sys.stderr)
+    sys.exit(1)
+' "$LIZARD_SLOC_LIMIT" >/dev/null
+    fi
+}
+
+# Stage 6: Cyclomatic complexity per function
+lizard_complexity_multi() {
+    local techs
+    if [[ -n "${LIZARD_FORCE_TECHS:-}" ]]; then
+        techs="$LIZARD_FORCE_TECHS"
+    else
+        techs=$(detect_tech)
+    fi
+    local json
+    if ! json=$(_lizard_run_json "$techs"); then
+        return 1
+    fi
+    if [[ -z "$json" ]]; then
+        return 0
+    fi
+    if [[ $VERBOSE -eq 1 ]]; then
+        echo "$json" | python3 -c '
+import json, sys
+ccn_limit = int(sys.argv[1])
+data = json.load(sys.stdin)
+viol = []
+for i in data:
+    ccn = i.get("cyclomatic_complexity") or i.get("ccn")
+    if ccn is None:
+        continue
+    try:
+        ccn = int(ccn)
+    except Exception:
+        continue
+    if ccn > ccn_limit:
+        viol.append(i)
+for v in viol:
+    print(f"{v.get(\"filename\")}:{v.get(\"start_line\")} {v.get(\"name\")} CCN={v.get(\"cyclomatic_complexity\") or v.get(\"ccn\")} \u003e {ccn_limit}")
+if viol:
+    sys.exit(1)
+' "$LIZARD_CCN_LIMIT"
+    else
+        echo "$json" | python3 -c '
+import json, sys
+ccn_limit = int(sys.argv[1])
+data = json.load(sys.stdin)
+for i in data:
+    ccn = i.get("cyclomatic_complexity") or i.get("ccn")
+    if ccn is None:
+        continue
+    try:
+        ccn = int(ccn)
+    except Exception:
+        continue
+    if ccn > ccn_limit:
+        sys.exit(1)
+' "$LIZARD_CCN_LIMIT" >/dev/null
+    fi
+}
+
+# Stage 7: Maintainability proxy (stricter CCN + function NLOC + parameters)
+lizard_maintainability_multi() {
+    local techs
+    if [[ -n "${LIZARD_FORCE_TECHS:-}" ]]; then
+        techs="$LIZARD_FORCE_TECHS"
+    else
+        techs=$(detect_tech)
+    fi
+    local json
+    if ! json=$(_lizard_run_json "$techs"); then
+        return 1
+    fi
+    if [[ -z "$json" ]]; then
+        return 0
+    fi
+    if [[ $VERBOSE -eq 1 ]]; then
+        echo "$json" | python3 -c '
+import json, sys
+ccn_limit = int(sys.argv[1])
+fn_nloc_limit = int(sys.argv[2])
+param_limit = int(sys.argv[3])
+data = json.load(sys.stdin)
+viol = []
+for i in data:
+    ccn = i.get("cyclomatic_complexity") or i.get("ccn") or 0
+    nloc = i.get("nloc") or 0
+    params = i.get("parameters") or i.get("parameter_count") or 0
+    try:
+        ccn = int(ccn)
+        nloc = int(nloc)
+        params = int(params)
+    except Exception:
+        continue
+    if ccn > ccn_limit or nloc > fn_nloc_limit or params > param_limit:
+        viol.append(i)
+for v in viol:
+    print(f"{v.get(\"filename\")}:{v.get(\"start_line\")} {v.get(\"name\")} CCN={v.get(\"cyclomatic_complexity\") or v.get(\"ccn\")}, NLOC={v.get(\"nloc\")}, Params={v.get(\"parameters\") or v.get(\"parameter_count\")}")
+if viol:
+    sys.exit(1)
+' "$LIZARD_CCN_STRICT" "$LIZARD_FN_NLOC_LIMIT" "$LIZARD_PARAM_LIMIT"
+    else
+        echo "$json" | python3 -c '
+import json, sys
+ccn_limit = int(sys.argv[1])
+fn_nloc_limit = int(sys.argv[2])
+param_limit = int(sys.argv[3])
+data = json.load(sys.stdin)
+for i in data:
+    ccn = i.get("cyclomatic_complexity") or i.get("ccn") or 0
+    nloc = i.get("nloc") or 0
+    params = i.get("parameters") or i.get("parameter_count") or 0
+    try:
+        ccn = int(ccn)
+        nloc = int(nloc)
+        params = int(params)
+    except Exception:
+        continue
+    if ccn > ccn_limit or nloc > fn_nloc_limit or params > param_limit:
+        sys.exit(1)
+' "$LIZARD_CCN_STRICT" "$LIZARD_FN_NLOC_LIMIT" "$LIZARD_PARAM_LIMIT" >/dev/null
+    fi
+}
+
+dotnet_format_check() {
+    if command -v dotnet >/dev/null 2>&1; then
+        run_tool "dotnet-format" dotnet format --verify-no-changes
+    else
+        debug "dotnet not found; skipping dotnet format"
+    fi
+}
+
+dotnet_build_check() {
+    if command -v dotnet >/dev/null 2>&1; then
+        run_tool "dotnet-build" dotnet build -warnaserror
+    else
+        debug "dotnet not found; skipping dotnet build"
+    fi
+}
+
+dotnet_test() {
+    if command -v dotnet >/dev/null 2>&1; then
+        run_tool "dotnet-test" dotnet test --nologo
+    else
+        debug "dotnet not found; skipping dotnet test"
+    fi
+}
+
+dotnet_coverage() {
+    if command -v dotnet >/dev/null 2>&1; then
+        # Attempt coverlet via data collector if configured
+        if dotnet test -l "console;verbosity=minimal" -p:CollectCoverage=true -p:CoverletOutputFormat=cobertura >/dev/null 2>&1; then
+            run_tool "dotnet-coverage" dotnet test -p:CollectCoverage=true -p:CoverletOutputFormat=cobertura
+        else
+            debug "Coverlet not configured; running dotnet test without coverage"
+            run_tool "dotnet-test" dotnet test --nologo
+        fi
+    else
+        debug "dotnet not found; skipping dotnet coverage"
+    fi
+}
+
+# --------------------
+# Java helpers
+# --------------------
+
+java_has_maven() { command -v mvn >/dev/null 2>&1; }
+java_has_gradle() { command -v gradle >/dev/null 2>&1 || command -v ./gradlew >/dev/null 2>&1; }
+java_gradle_cmd() { if command -v ./gradlew >/dev/null 2>&1; then echo "./gradlew"; else echo "gradle"; fi; }
+
+java_checkstyle() {
+    # Prefer project-configured plugins; fallback to CLI if checkstyle exists
+    if [[ -f "pom.xml" ]] && java_has_maven; then
+        run_tool "maven-checkstyle" mvn -q -DskipTests=true checkstyle:check || return 1
+    elif { [[ -f "build.gradle" ]] || [[ -f "build.gradle.kts" ]]; } && java_has_gradle; then
+        run_tool "gradle-checkstyle" "$(java_gradle_cmd)" -q check || return 1
+    elif command -v checkstyle >/dev/null 2>&1; then
+        # Fallback: run checkstyle on each tracked Java file
+        local files
+        files=$(git ls-files "**/*.java" 2>/dev/null || true)
+        if [[ -z "$files" ]]; then
+            debug "No Java files found for checkstyle"
+            return 0
+        fi
+        local f
+        for f in $files; do
+            run_tool "checkstyle" checkstyle -c /google_checks.xml "$f" || return 1
+        done
+    else
+        debug "No Java linter configured; skipping checkstyle"
+    fi
+}
+
+java_format_check() {
+    # Prefer Spotless if configured in project
+    if [[ -f "pom.xml" ]] && java_has_maven; then
+        if grep -qi "spotless" pom.xml 2>/dev/null; then
+            run_tool "maven-spotless" mvn -q -DskipTests=true spotless:check && return 0
+        fi
+    fi
+    if { [[ -f "build.gradle" ]] || [[ -f "build.gradle.kts" ]]; } && java_has_gradle; then
+        if grep -qi "spotless" build.gradle* 2>/dev/null; then
+            run_tool "gradle-spotless" "$(java_gradle_cmd)" -q spotlessCheck && return 0
+        fi
+    fi
+    # Fallback to google-java-format if available
+    if command -v google-java-format >/dev/null 2>&1; then
+        local files
+        files=$(git ls-files "**/*.java" 2>/dev/null || true)
+        if [[ -z "$files" ]]; then
+            debug "No Java files found for formatting"
+            return 0
+        fi
+        local f
+        for f in $files; do
+            run_tool "google-java-format" google-java-format --dry-run "$f" || return 1
+        done
+    else
+        debug "No Java formatter configured (Spotless/Google) — skipping format check"
+    fi
+}
+
+java_build_check() {
+    if [[ -f "pom.xml" ]] && java_has_maven; then
+        run_tool "maven-verify" mvn -q -DskipTests=true -Dmaven.test.skip=true -DfailOnError=true -e -B -V verify
+    elif { [[ -f "build.gradle" ]] || [[ -f "build.gradle.kts" ]]; } && java_has_gradle; then
+        run_tool "gradle-build" "$(java_gradle_cmd)" -q build -x test
+    else
+        debug "No Java build tool detected; skipping type/build check"
+    fi
+}
+
+java_test() {
+    if [[ -f "pom.xml" ]] && java_has_maven; then
+        run_tool "maven-test" mvn -q -e -B test
+    elif { [[ -f "build.gradle" ]] || [[ -f "build.gradle.kts" ]]; } && java_has_gradle; then
+        run_tool "gradle-test" "$(java_gradle_cmd)" -q test
+    else
+        debug "No Java test tool detected; skipping tests"
+    fi
+}
+
+java_coverage() {
+    # Assume JaCoCo configured in project; run verify/build to produce coverage
+    if [[ -f "pom.xml" ]] && java_has_maven; then
+        run_tool "maven-verify" mvn -q -e -B verify || return 1
+    elif { [[ -f "build.gradle" ]] || [[ -f "build.gradle.kts" ]]; } && java_has_gradle; then
+        run_tool "gradle-jacoco" "$(java_gradle_cmd)" -q test jacocoTestReport || return 1
+    else
+        debug "No Java coverage configuration detected; skipping"
+    fi
+}
+
+# --------------------
+# Security helpers
+# --------------------
+
+security_gitleaks() {
+    if command -v gitleaks >/dev/null 2>&1; then
+        run_tool "gitleaks" gitleaks detect --no-color --no-banner --redact --verbose
+    else
+        debug "gitleaks not found; skipping secrets scan"
+    fi
+}
+
+security_semgrep() {
+    if command -v semgrep >/dev/null 2>&1; then
+        # Use the default auto rules; users can add a .semgrep.yml to customize
+        run_tool "semgrep" semgrep scan --error --severity high,critical || return 1
+    else
+        debug "semgrep not found; skipping SAST scan"
+    fi
+}
+
+# --------------------
+# HCL / Terraform helpers
+# --------------------
+
+hcl_format_check() {
+    # Prefer terraform fmt for .tf; fallback to hclfmt for generic .hcl if available
+    if command -v terraform >/dev/null 2>&1; then
+        # -check ensures non-zero exit if formatting needed; -recursive processes subdirs
+        run_tool "terraform-fmt" terraform fmt -check -recursive || return 1
+    elif command -v hclfmt >/dev/null 2>&1; then
+        # hclfmt formats but may not support a check mode; emulate by diff
+        local tmpdir
+        tmpdir=$(mktemp -d)
+        local changed=0
+        while IFS= read -r -d '' f; do
+            cp "$f" "$tmpdir/$(basename "$f")"
+            hclfmt -w "$tmpdir/$(basename "$f")"
+            if ! diff -q "$f" "$tmpdir/$(basename "$f")" >/dev/null; then
+                changed=1
+                break
+            fi
+        done < <(find . -type f \( -name "*.hcl" -o -name "*.tf" \) -print0)
+        rm -rf "$tmpdir"
+        if [[ $changed -eq 1 ]]; then
+            return 1
+        fi
+    else
+        debug "terraform/hclfmt not found; skipping HCL format check"
+    fi
+}
+
+hcl_lint_check() {
+    # Terraform lint via tflint if available
+    if command -v tflint >/dev/null 2>&1; then
+        run_tool "tflint" tflint --no-color || return 1
+    else
+        debug "tflint not found; skipping Terraform lint"
+    fi
+}
+
+hcl_security_check() {
+    # Terraform security via tfsec if available (complements semgrep)
+    if command -v tfsec >/dev/null 2>&1; then
+        run_tool "tfsec" tfsec --no-color --soft-fail=false || return 1
+    else
+        debug "tfsec not found; skipping Terraform security scan"
     fi
 }
