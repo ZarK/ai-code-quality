@@ -70,6 +70,19 @@ function cachedQuality(version='dev') {
   return { root, qdir, check, stages };
 }
 
+import { fileURLToPath } from 'node:url';
+
+function packageAssetsQualityDir() {
+  // Resolve assets/quality path inside the installed package
+  try {
+    const here = fileURLToPath(import.meta.url);
+    const pkgRoot = dirname(dirname(here)); // bin/ -> package root
+    const assetsQ = join(pkgRoot, 'assets', 'quality');
+    if (existsSync(assetsQ)) return assetsQ;
+  } catch {}
+  return null;
+}
+
 function devWarmCache() {
   // Dev-mode: copy current repo's quality/ into cache for local testing.
   const srcQ = join(CWD, 'quality');
@@ -96,9 +109,18 @@ async function resolveQualityPaths() {
     const warmed = devWarmCache();
     if (warmed && existsSync(warmed.check)) return { hasLocal: false, ...warmed };
   }
+  // Try embedded assets in package (production mode)
+  const assetsQ = packageAssetsQualityDir();
+  if (assetsQ) {
+    const out = cachedQuality('pkg');
+    ensureDir(out.root);
+    cpSync(assetsQ, out.qdir, { recursive: true });
+    if (existsSync(out.check)) return { hasLocal: false, ...out };
+  }
+  // Fallback: dev cache without assets
   const cached = cachedQuality('dev');
   if (existsSync(cached.check)) return { hasLocal: false, ...cached };
-  eprintln('[ERROR] No local quality/ found and cache is empty. In production, the package will include embedded assets.');
+  eprintln('[ERROR] No quality assets available (local, cache, or embedded).');
   process.exit(2);
 }
 
