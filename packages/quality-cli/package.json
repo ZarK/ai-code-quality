@@ -9,10 +9,19 @@
     "quality": "bin/aiq.js"
   },
   "scripts": {
-    "dev": "node bin/quality.js --help"
+    "dev": "node bin/quality.js --help",
+    "clean": "rm -rf assets/quality && mkdir -p assets/quality",
+    "build": "npm run clean && node ./scripts/build-assets.cjs",
+    "prepare": "npm run build"
   },
   "engines": {
     "node": ">=18"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "files": [
+    "bin",
+    "assets/quality",
+    "README.md",
+    "THIRD_PARTY_NOTICES.md"
+  ]
 }

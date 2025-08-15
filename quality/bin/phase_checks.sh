@@ -2,18 +2,44 @@
 set -euo pipefail
 
 QUALITY_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+AIQ_DIR="$(pwd)/.aiq"
 PHASE_FILE="$QUALITY_DIR/.phase_progress"
+PROGRESS_JSON="$AIQ_DIR/progress.json"
 
 get_current_stage() {
+    # Prefer .aiq/progress.json if present; fallback to legacy .phase_progress; default 1
+    if [[ -f "$PROGRESS_JSON" ]]; then
+        # Extract current_stage number without jq
+        local val
+        val=$(grep -E '"current_stage"\s*:' "$PROGRESS_JSON" 2>/dev/null | head -1 | sed -E 's/.*:\s*([0-9]+).*/\1/') || true
+        if [[ -n "$val" ]]; then
+            echo "$val"
+            return 0
+        fi
+    fi
     if [[ -f "$PHASE_FILE" ]]; then
         head -n1 "$PHASE_FILE" | tr -d '[:space:]'
-    else
-        echo "1"
+        return 0
     fi
+    echo "1"
 }
 
 set_current_stage() {
     local new_stage=$1
+    mkdir -p "$AIQ_DIR"
+    # Write minimal JSON, preserve other fields if exist
+    if [[ -f "$PROGRESS_JSON" ]]; then
+        # naive replace current_stage value
+        if grep -q '"current_stage"' "$PROGRESS_JSON"; then
+            sed -E "s/(\"current_stage\"\s*:\s*)[0-9]+/\1${new_stage}/" "$PROGRESS_JSON" >"$PROGRESS_JSON.tmp" && mv "$PROGRESS_JSON.tmp" "$PROGRESS_JSON"
+        else
+            # insert field
+            echo "{ \"current_stage\": ${new_stage} }" >"$PROGRESS_JSON"
+        fi
+    else
+        echo "{ \"current_stage\": ${new_stage} }" >"$PROGRESS_JSON"
+    fi
+    # Maintain legacy file for backward compatibility
     echo "$new_stage" >"$PHASE_FILE"
 }
 

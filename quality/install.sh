@@ -173,11 +173,12 @@ EOF
     fi
     chmod +x check.sh
 
-    printf "Initializing phase tracking...\n"
+    printf "Initializing progress tracking...\n"
     if [[ $DRY_RUN -eq 1 ]]; then
-        echo "[DRY-RUN] initialize quality/.phase_progress"
+        echo "[DRY-RUN] initialize .aiq/progress.json"
     else
-        echo "0" >quality/.phase_progress
+        mkdir -p .aiq
+        printf '%s\n' '{"current_stage":0,"disabled":[],"order":[0,1,2,3,4,5,6,7,8,9]}' e .aiq/progress.json
     fi
 
     printf "Updating .gitignore...\n"
