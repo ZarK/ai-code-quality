@@ -7,10 +7,21 @@ printf "============================\n"
 
 SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}" 2>/dev/null || realpath "${BASH_SOURCE[0]}" 2>/dev/null || echo "${BASH_SOURCE[0]}")"
 QUALITY_DIR="$(cd "$(dirname "$SCRIPT_PATH")/.." && pwd)"
+REPO_ROOT="$(cd "$QUALITY_DIR/.." && pwd)"
 
 if [[ ! -f "$QUALITY_DIR/bin/run_checks.sh" ]]; then
     printf "❌ Quality system not found!\n"
     exit 1
+fi
+
+# Prefer project-local virtual environment tools
+if [[ -d "$REPO_ROOT/.venv" ]]; then
+    export PATH="$REPO_ROOT/.venv/bin:$PATH"
+fi
+
+# Fall back to uvx-managed tools, if available
+if command -v uvx >/dev/null 2>&1; then
+    export AIQ_UVX_AVAILABLE=1
 fi
 
 exec "$QUALITY_DIR/bin/run_checks.sh"

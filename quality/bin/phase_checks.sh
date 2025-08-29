@@ -6,19 +6,35 @@ AIQ_DIR="$(pwd)/.aiq"
 PHASE_FILE="$QUALITY_DIR/.phase_progress"
 PROGRESS_JSON="$AIQ_DIR/progress.json"
 
+# Extract first integer from a string; defaults to 0 if none
+parse_stage_from_string() {
+    local s="$1"
+    local n
+    n=$(printf "%s" "$s" | grep -oE '[0-9]+' | head -1 || true)
+    if [[ -n "${n:-}" ]]; then
+        echo "$n"
+    else
+        echo "0"
+    fi
+}
+
 get_current_stage() {
     # Prefer .aiq/progress.json if present; fallback to legacy .phase_progress; default 1
     if [[ -f "$PROGRESS_JSON" ]]; then
-        # Extract current_stage number without jq
+        # Try to extract current_stage number without jq (portable whitespace class)
         local val
-        val=$(grep -E '"current_stage"\s*:' "$PROGRESS_JSON" 2>/dev/null | head -1 | sed -E 's/.*:\s*([0-9]+).*/\1/') || true
-        if [[ -n "$val" ]]; then
+        val=$(grep -E '"current_stage"[[:space:]]*:' "$PROGRESS_JSON" 2>/dev/null | head -1 | sed -E 's/.*:[[:space:]]*([0-9]+).*/\1/') || true
+        if [[ -n "${val:-}" ]]; then
             echo "$val"
             return 0
         fi
+        # Fallback: parse first integer from entire file
+        parse_stage_from_string "$(cat "$PROGRESS_JSON" 2>/dev/null || true)"
+        return 0
     fi
     if [[ -f "$PHASE_FILE" ]]; then
-        head -n1 "$PHASE_FILE" | tr -d '[:space:]'
+        # Handle both plain number and JSON accidentally written here
+        parse_stage_from_string "$(head -n1 "$PHASE_FILE" 2>/dev/null || true)"
         return 0
     fi
     echo "1"
@@ -31,7 +47,7 @@ set_current_stage() {
     if [[ -f "$PROGRESS_JSON" ]]; then
         # naive replace current_stage value
         if grep -q '"current_stage"' "$PROGRESS_JSON"; then
-            sed -E "s/(\"current_stage\"\s*:\s*)[0-9]+/\1${new_stage}/" "$PROGRESS_JSON" >"$PROGRESS_JSON.tmp" && mv "$PROGRESS_JSON.tmp" "$PROGRESS_JSON"
+            sed -E "s/(\"current_stage\"[[:space:]]*:[[:space:]]*)[0-9]+/\1${new_stage}/" "$PROGRESS_JSON" >"$PROGRESS_JSON.tmp" && mv "$PROGRESS_JSON.tmp" "$PROGRESS_JSON"
         else
             # insert field
             echo "{ \"current_stage\": ${new_stage} }" >"$PROGRESS_JSON"
@@ -70,8 +86,13 @@ run_stage() {
     local stage_script="$QUALITY_DIR/stages/${stage}-${stage_name}.sh"
 
     if [[ -f "$stage_script" ]]; then
-        if bash "$stage_script" --quiet; then
-            printf "Stage %s (%s): PASSED\n" "$stage" "$stage_name"
+        local _out
+        if _out=$(bash "$stage_script" --quiet 2>/dev/null); then
+            if echo "$_out" | grep -q "AIQ_NO_TESTS=1"; then
+                printf "Stage %s (%s): WARNING (zero tests detected)\n" "$stage" "$stage_name"
+            else
+                printf "Stage %s (%s): PASSED\n" "$stage" "$stage_name"
+            fi
         else
             printf "Stage %s (%s): FAILED\n" "$stage" "$stage_name"
             return 1
@@ -91,6 +112,10 @@ main() {
 
     local current_stage
     current_stage=$(get_current_stage)
+
+    # Normalize to integers to avoid [[ ]] numeric comparison errors
+    target_stage=$(parse_stage_from_string "$target_stage")
+    current_stage=$(parse_stage_from_string "$current_stage")
 
     local available_stages
     available_stages=$(get_available_stages)

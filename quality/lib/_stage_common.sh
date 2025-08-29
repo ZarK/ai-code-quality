@@ -153,11 +153,68 @@ python_tests_present() {
     find . \
         -type f \( -name "test_*.py" -o -name "*_test.py" \) \
         -not -path "*/.venv/*" \
+        -not -path "*/.venv-*/*" \
+        -not -path "*/.venv*/*" \
+        -not -path "*/venv/*" \
+        -not -path "*/.tox/*" \
+        -not -path "*/.direnv/*" \
         -not -path "*/node_modules/*" \
         -not -path "*/.git/*" \
         -not -path "*/__pycache__/*" \
         -not -path "*/.pytest_cache/*" \
         -not -path "*/.mypy_cache/*" | head -1 | grep -q .
+}
+
+# Utility: detect JS/TS test files (vitest/jest conventions)
+js_tests_present() {
+    find . \
+        \( -path "*/.venv/*" -o -path "*/.venv-*/*" -o -path "*/.venv*/*" -o -path "*/venv/*" -o -path "*/.tox/*" -o -path "*/.direnv/*" -o -path "*/node_modules/*" -o -path "*/dist/*" -o -path "*/build/*" -o -path "*/.git/*" \) -prune -o \
+        \( -type f \
+        \( -name "*.test.js" -o -name "*.spec.js" -o -name "*.test.jsx" -o -name "*.spec.jsx" \
+        -o -name "*.test.ts" -o -name "*.spec.ts" -o -name "*.test.tsx" -o -name "*.spec.tsx" \) \
+        -o \( -path "*/__tests__/*" -a -type f \( -name "*.js" -o -name "*.jsx" -o -name "*.ts" -o -name "*.tsx" \) \) \) \
+        -print -quit | grep -q .
+}
+
+# Utility: detect .NET test projects/files
+_dotnet_csproj_is_test() {
+    local file="$1"
+    if grep -qi "<IsTestProject>\s*true\s*</IsTestProject>" "$file" 2>/dev/null; then
+        return 0
+    fi
+    case "$(basename "$file")" in
+    *Test*.csproj) return 0 ;;
+    esac
+    return 1
+}
+
+dotnet_tests_present() {
+    # Look for test csproj or common test directories
+    if find . -maxdepth 5 -type f -name "*.csproj" | while read -r f; do _dotnet_csproj_is_test "$f" && echo yes && break; done | grep -q yes; then
+        return 0
+    fi
+    find . \
+        \( -path "*/bin/*" -o -path "*/obj/*" -o -path "*/.git/*" -o -path "*/node_modules/*" \) -prune -o \
+        \( -path "*/tests/*" -o -path "*/test/*" \) -type f -name "*Test*.cs" -print -quit | grep -q .
+}
+
+# Utility: detect Java test files
+java_tests_present() {
+    if find . -path "*/src/test/java/*" -type f -name "*.java" -print -quit | grep -q .; then
+        return 0
+    fi
+    find . \
+        \( -path "*/.git/*" -o -path "*/build/*" -o -path "*/target/*" -o -path "*/node_modules/*" \) -prune -o \
+        -type f \( -name "*Test.java" -o -name "*Tests.java" \) -print -quit | grep -q .
+}
+
+# Utility: detect if any tests are present across supported tech
+any_tests_present() {
+    if python_tests_present; then return 0; fi
+    if js_tests_present; then return 0; fi
+    if dotnet_tests_present; then return 0; fi
+    if java_tests_present; then return 0; fi
+    return 1
 }
 
 mypy_check() {
@@ -218,23 +275,37 @@ radon_sloc() {
 
     if [[ $VERBOSE -eq 1 ]]; then
         echo "$radon_output"
-    fi
-
-    echo "$radon_output" | awk '
-        BEGIN { current_file = ""; overall_exit_code = 0; }
-        /^[a-zA-Z0-9_\-\/\.]+\.py$/ { current_file = $0; }
-        /^[[:space:]]*SLOC:/ {
-            if (current_file != "") {
-                sloc_val = $2;
-                if (sloc_val >= 350) {
-                    printf "%s: %d lines >= 350\n", current_file, sloc_val > "/dev/stderr";
-                    overall_exit_code = 1;
+        echo "$radon_output" | awk '
+            BEGIN { current_file = ""; overall_exit_code = 0; }
+            /^[a-zA-Z0-9_\-\/\.]+\.py$/ { current_file = $0; }
+            /^[[:space:]]*SLOC:/ {
+                if (current_file != "") {
+                    sloc_val = $2;
+                    if (sloc_val >= 350) {
+                        printf "%s: %d lines >= 350\n", current_file, sloc_val > "/dev/stderr";
+                        overall_exit_code = 1;
+                    }
+                    current_file = "";
                 }
-                current_file = "";
             }
-        }
-        END { exit overall_exit_code; }
-    '
+            END { exit overall_exit_code; }
+        '
+    else
+        echo "$radon_output" | awk '
+            BEGIN { current_file = ""; overall_exit_code = 0; }
+            /^[a-zA-Z0-9_\-\/\.]+\.py$/ { current_file = $0; }
+            /^[[:space:]]*SLOC:/ {
+                if (current_file != "") {
+                    sloc_val = $2;
+                    if (sloc_val >= 350) {
+                        overall_exit_code = 1;
+                    }
+                    current_file = "";
+                }
+            }
+            END { exit overall_exit_code; }
+        ' >/dev/null
+    fi
 }
 
 radon_complexity() {
@@ -250,7 +321,7 @@ radon_complexity() {
     fi
 
     if echo "$radon_output" | grep -qE ' - (C|D|E|F) \('; then
-        if [[ $VERBOSE -eq 0 ]]; then
+        if [[ $VERBOSE -eq 1 ]]; then
             echo "$radon_output" >&2
         fi
         return 1
@@ -272,7 +343,7 @@ radon_maintainability() {
     if echo "$radon_output" | grep ' - [A-F] (' | awk -F'[()]' '{if ($2 != "" && $2 < 40) exit 1}'; then
         return 0
     else
-        if [[ $VERBOSE -eq 0 ]]; then
+        if [[ $VERBOSE -eq 1 ]]; then
             echo "$radon_output" >&2
         fi
         return 1
@@ -453,6 +524,11 @@ tsc_check() {
 }
 
 vitest_unit() {
+    # Skip if no JS/TS tests present
+    if ! js_tests_present; then
+        debug "No JS/TS tests detected; skipping vitest"
+        return 0
+    fi
     if command -v bunx >/dev/null 2>&1; then
         run_tool "vitest" bunx vitest run
     else
@@ -461,6 +537,11 @@ vitest_unit() {
 }
 
 vitest_coverage() {
+    # Skip if no JS/TS tests present
+    if ! js_tests_present; then
+        debug "No JS/TS tests detected; skipping vitest coverage"
+        return 0
+    fi
     if command -v bunx >/dev/null 2>&1; then
         run_tool "vitest" bunx vitest run --coverage
     else
@@ -494,18 +575,13 @@ shellcheck_check() {
             echo "$shell_files" | xargs shellcheck "${shellcheck_args[@]}"
         fi
     else
-        local shellcheck_output
+        # Non-verbose: suppress shellcheck output; return only exit status
         if [[ ${#shellcheck_args[@]} -eq 0 ]]; then
-            shellcheck_output=$(echo "$shell_files" | xargs shellcheck 2>&1)
+            echo "$shell_files" | xargs shellcheck >/dev/null 2>&1
         else
-            shellcheck_output=$(echo "$shell_files" | xargs shellcheck "${shellcheck_args[@]}" 2>&1)
+            echo "$shell_files" | xargs shellcheck "${shellcheck_args[@]}" >/dev/null 2>&1
         fi
-        local exit_code=$?
-
-        if [[ $exit_code -ne 0 ]]; then
-            echo "$shellcheck_output" >&2
-            return $exit_code
-        fi
+        return $?
     fi
 }
 
@@ -679,6 +755,7 @@ if failed:
     sys.exit(1)
 ' "$LIZARD_SLOC_LIMIT"
     else
+        # Non-verbose: compute violations but do not print details
         echo "$json" | python3 -c '
 import json, sys, collections
 limit = int(sys.argv[1])
@@ -689,10 +766,7 @@ for item in data:
     nloc = item.get("nloc") or 0
     if fn:
         by_file[fn] += int(nloc)
-failed = [(fn, n) for fn, n in by_file.items() if n >= limit]
-if failed:
-    for fn, total in failed:
-        print(f"{fn}: {total} >= {limit}", file=sys.stderr)
+if any(total >= limit for total in by_file.values()):
     sys.exit(1)
 ' "$LIZARD_SLOC_LIMIT" >/dev/null
     fi
@@ -951,7 +1025,12 @@ java_coverage() {
 
 security_gitleaks() {
     if command -v gitleaks >/dev/null 2>&1; then
-        run_tool "gitleaks" gitleaks detect --no-color --no-banner --redact --verbose
+        # Avoid overly verbose output by default; use --verbose only when VERBOSE=1
+        if [[ $VERBOSE -eq 1 ]]; then
+            run_tool "gitleaks" gitleaks detect --no-color --no-banner --redact --verbose
+        else
+            run_tool "gitleaks" gitleaks detect --no-color --no-banner --redact
+        fi
     else
         debug "gitleaks not found; skipping secrets scan"
     fi

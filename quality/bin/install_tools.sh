@@ -2,6 +2,11 @@
 set -euo pipefail
 
 QUALITY_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# Repo-local temp directory for platform agnostic temp storage
+REPO_ROOT="$(cd "$QUALITY_DIR/.." && pwd)"
+AIQ_DIR="$REPO_ROOT/.aiq"
+AIQ_TMP_DIR="$AIQ_DIR/tmp"
+mkdir -p "$AIQ_TMP_DIR"
 
 printf "Tool Installation Helper\n"
 printf "========================\n"
@@ -147,13 +152,15 @@ install_linux_tools() {
         else
             printf "Go not found. Installing shfmt manually...\n"
             if [[ $DRY_RUN -eq 1 ]]; then
-                echo "[DRY-RUN] curl -L https://github.com/mvdan/sh/releases/latest/download/shfmt_v3.7.0_linux_amd64 -o /tmp/shfmt"
-                echo "[DRY-RUN] chmod +x /tmp/shfmt"
-                echo "[DRY-RUN] sudo mv /tmp/shfmt /usr/local/bin/shfmt"
+                echo "[DRY-RUN] mkdir -p \"$AIQ_TMP_DIR\""
+                echo "[DRY-RUN] curl -L https://github.com/mvdan/sh/releases/latest/download/shfmt_v3.7.0_linux_amd64 -o \"$AIQ_TMP_DIR/shfmt\""
+                echo "[DRY-RUN] chmod +x \"$AIQ_TMP_DIR/shfmt\""
+                echo "[DRY-RUN] sudo mv \"$AIQ_TMP_DIR/shfmt\" /usr/local/bin/shfmt"
             else
-                curl -L https://github.com/mvdan/sh/releases/latest/download/shfmt_v3.7.0_linux_amd64 -o /tmp/shfmt
-                chmod +x /tmp/shfmt
-                sudo mv /tmp/shfmt /usr/local/bin/shfmt
+                tmp_shfmt="$AIQ_TMP_DIR/shfmt"
+                curl -L https://github.com/mvdan/sh/releases/latest/download/shfmt_v3.7.0_linux_amd64 -o "$tmp_shfmt"
+                chmod +x "$tmp_shfmt"
+                sudo mv "$tmp_shfmt" /usr/local/bin/shfmt
             fi
         fi
 
@@ -162,9 +169,10 @@ install_linux_tools() {
             if [[ $DRY_RUN -eq 1 ]]; then
                 echo "[DRY-RUN] install gitleaks (download, extract, move to /usr/local/bin)"
             else
-                curl -s https://api.github.com/repos/gitleaks/gitleaks/releases/latest | grep "browser_download_url.*linux_x64.tar.gz" | cut -d '"' -f 4 | xargs curl -L -o /tmp/gitleaks.tar.gz || true
-                tar -xzf /tmp/gitleaks.tar.gz -C /tmp 2>/dev/null || true
-                sudo mv /tmp/gitleaks /usr/local/bin/gitleaks 2>/dev/null || true
+                curl -s https://api.github.com/repos/gitleaks/gitleaks/releases/latest | grep "browser_download_url.*linux_x64.tar.gz" | cut -d '"' -f 4 | xargs curl -L -o "$AIQ_TMP_DIR/gitleaks.tar.gz" || true
+                tar -xzf "$AIQ_TMP_DIR/gitleaks.tar.gz" -C "$AIQ_TMP_DIR" 2>/dev/null || true
+                sudo mv "$AIQ_TMP_DIR/gitleaks" /usr/local/bin/gitleaks 2>/dev/null || true
+                sudo mv "$AIQ_TMP_DIR"/*/gitleaks /usr/local/bin/gitleaks 2>/dev/null || true
             fi
         fi
         # semgrep
@@ -188,13 +196,15 @@ install_linux_tools() {
         # tfsec
         if ! check_command tfsec; then
             if [[ $DRY_RUN -eq 1 ]]; then
-                echo "[DRY-RUN] curl -s -L https://github.com/aquasecurity/tfsec/releases/latest/download/tfsec-linux-amd64 -o /tmp/tfsec"
-                echo "[DRY-RUN] chmod +x /tmp/tfsec"
-                echo "[DRY-RUN] sudo mv /tmp/tfsec /usr/local/bin/tfsec"
+                echo "[DRY-RUN] mkdir -p \"$AIQ_TMP_DIR\""
+                echo "[DRY-RUN] curl -s -L https://github.com/aquasecurity/tfsec/releases/latest/download/tfsec-linux-amd64 -o \"$AIQ_TMP_DIR/tfsec\""
+                echo "[DRY-RUN] chmod +x \"$AIQ_TMP_DIR/tfsec\""
+                echo "[DRY-RUN] sudo mv \"$AIQ_TMP_DIR/tfsec\" /usr/local/bin/tfsec"
             else
-                curl -s -L https://github.com/aquasecurity/tfsec/releases/latest/download/tfsec-linux-amd64 -o /tmp/tfsec
-                chmod +x /tmp/tfsec
-                sudo mv /tmp/tfsec /usr/local/bin/tfsec
+                tmp_tfsec="$AIQ_TMP_DIR/tfsec"
+                curl -s -L https://github.com/aquasecurity/tfsec/releases/latest/download/tfsec-linux-amd64 -o "$tmp_tfsec"
+                chmod +x "$tmp_tfsec"
+                sudo mv "$tmp_tfsec" /usr/local/bin/tfsec
             fi
         fi
     elif check_command yum; then

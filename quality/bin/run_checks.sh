@@ -19,7 +19,10 @@ get_stage_name() {
     esac
 }
 
-FAILED_FILE="/tmp/failed_stages.txt"
+AIQ_DIR="$(cd "$QUALITY_DIR/.." && pwd)/.aiq"
+AIQ_TMP_DIR="$AIQ_DIR/tmp"
+mkdir -p "$AIQ_TMP_DIR"
+FAILED_FILE="$AIQ_TMP_DIR/failed_stages.$$"
 export FAILED_STAGES_FILE="$FAILED_FILE"
 rm -f "$FAILED_FILE"
 

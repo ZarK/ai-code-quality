@@ -24,6 +24,11 @@ jobs:
       with:
         node-version: '18'
         
+    - name: Install uv (for uvx tooling)
+      run: |
+        curl -LsSf https://astral.sh/uv/install.sh | sh
+        echo "${HOME}/.local/bin" >> "$GITHUB_PATH"
+
     - name: Install system dependencies
       run: |
         sudo apt-get update
@@ -31,9 +36,10 @@ jobs:
         
     - name: Install shfmt
       run: |
-        curl -L https://github.com/mvdan/sh/releases/download/v3.7.0/shfmt_v3.7.0_linux_amd64 -o /tmp/shfmt
-        chmod +x /tmp/shfmt
-        sudo mv /tmp/shfmt /usr/local/bin/shfmt
+        mkdir -p .aiq/tmp
+        curl -L https://github.com/mvdan/sh/releases/download/v3.7.0/shfmt_v3.7.0_linux_amd64 -o .aiq/tmp/shfmt
+        chmod +x .aiq/tmp/shfmt
+        sudo mv .aiq/tmp/shfmt /usr/local/bin/shfmt
         
     - name: Install Python dependencies
       run: |

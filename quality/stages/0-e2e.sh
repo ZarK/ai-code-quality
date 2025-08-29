@@ -16,6 +16,12 @@ log() {
     fi
 }
 
+# If explicitly skipped via environment, emit sentinel and succeed
+if [[ "${SKIP_E2E:-}" == "1" || "${SKIP_E2E:-}" == "true" ]]; then
+    echo "AIQ_NO_TESTS=1"
+    exit 0
+fi
+
 detect_e2e_framework() {
     if [[ -f "$PROJECT_ROOT/package.json" ]]; then
         if grep -q '"@playwright/test"' "$PROJECT_ROOT/package.json" 2>/dev/null; then
@@ -61,6 +67,7 @@ run_e2e_tests() {
     if [[ -z "$e2e_dir" ]]; then
         log "No E2E test directory found (checked: tests/e2e, e2e, test/e2e)"
         log "E2E tests skipped"
+        echo "AIQ_NO_TESTS=1"
         return 0
     fi
 
@@ -99,6 +106,7 @@ run_e2e_tests() {
         log "No supported E2E framework detected"
         log "Supported frameworks: Playwright (JS/TS), Playwright (Python), pytest"
         log "E2E tests skipped"
+        echo "AIQ_NO_TESTS=1"
         return 0
         ;;
     *)

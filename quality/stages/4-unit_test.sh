@@ -9,6 +9,12 @@ parse_flags "$@"
 TECHS=$(detect_tech)
 FAILED=0
 
+# If no tests are present across detected technologies, succeed with sentinel
+if ! any_tests_present; then
+    echo "AIQ_NO_TESTS=1"
+    exit 0
+fi
+
 if [[ "$TECHS" == *"python"* ]]; then
     debug "Running pytest unit tests..."
     if ! pytest_unit; then
