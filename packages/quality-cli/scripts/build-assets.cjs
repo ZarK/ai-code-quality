@@ -1,5 +1,5 @@
 'use strict';
-const { cpSync, existsSync, mkdirSync } = require('node:fs');
+const { cpSync, existsSync, mkdirSync, chmodSync } = require('node:fs');
 const { join, resolve } = require('node:path');
 
 const repoRoot = resolve(__dirname, '..', '..', '..');
@@ -12,4 +12,7 @@ if (!existsSync(src)) {
 }
 mkdirSync(dest, { recursive: true });
 cpSync(src, dest, { recursive: true });
+// Ensure key scripts are executable in the packaged assets
+try { chmodSync(join(dest, 'check.sh'), 0o755); } catch {}
+try { chmodSync(join(dest, 'bin', 'run_checks.sh'), 0o755); } catch {}
 console.log('[aiq build] Copied quality/ -> packages/quality-cli/assets/quality');

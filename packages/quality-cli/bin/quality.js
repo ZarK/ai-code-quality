@@ -1,12 +1,12 @@
 #!/usr/bin/env node
 /*
   @tjalve/aiq - ephemeral CLI runner for the 9-stage quality pipeline.
-  Commands: run, config, hook install, ci setup, ignore write, doctor.
+  Commands: run, config, hook install, ci setup, ignore write, doctor, install-tools.
   Supports --diff-only to scope certain stages to changed files.
 */
 
 import { spawn, spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, writeFileSync, cpSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync, cpSync, chmodSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import os from 'node:os';
 import process from 'node:process';
@@ -25,7 +25,7 @@ function parseArgs(argv) {
   for (let i = 2; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--help' || a === '-h') args.help = true;
-    else if (['run','config','hook','ci','ignore','doctor','report'].includes(a)) args._.push(a);
+    else if (['run','config','hook','ci','ignore','doctor','report','install-tools'].includes(a)) args._.push(a);
     else if (a === '--only') { args.only = Number(argv[++i]); }
     else if (a === '--from') { args.from = Number(argv[++i]); }
     else if (a === '--up-to') { args.upTo = Number(argv[++i]); }
@@ -56,19 +56,31 @@ function cacheRoot() {
   return join(base, 'aiq-cli');
 }
 
-function cachedQuality(version = 'dev') {
-  const root = join(cacheRoot(), version);
+function packageRootDir() {
+  const here = fileURLToPath(import.meta.url);
+  return dirname(dirname(here));
+}
+
+function packageVersion() {
+  try {
+    const pkgJson = readFileSync(join(packageRootDir(), 'package.json'), 'utf8');
+    const pkg = JSON.parse(pkgJson);
+    return String(pkg.version || 'dev');
+  } catch { return 'dev'; }
+}
+
+function cachedQuality(version) {
+  const ver = version || packageVersion();
+  const root = join(cacheRoot(), ver);
   const qdir = join(root, 'quality');
   const check = join(qdir, 'check.sh');
   const stages = join(qdir, 'stages');
-  return { root, qdir, check, stages };
+  return { root, qdir, check, stages, ver };
 }
 
 function packageAssetsQualityDir() {
   try {
-    const here = fileURLToPath(import.meta.url);
-    const pkgRoot = dirname(dirname(here));
-    const assetsQ = join(pkgRoot, 'assets', 'quality');
+    const assetsQ = join(packageRootDir(), 'assets', 'quality');
     if (existsSync(assetsQ)) return assetsQ;
   } catch {}
   return null;
@@ -77,11 +89,13 @@ function packageAssetsQualityDir() {
 function devWarmCache() {
   const srcQ = join(CWD, 'quality');
   if (!existsSync(srcQ)) return null;
-  const { root, qdir } = cachedQuality('dev');
-  ensureDir(root);
-  cpSync(srcQ, qdir, { recursive: true });
-  const { check, stages } = cachedQuality('dev');
-  return { qdir, check, stages };
+  const out = cachedQuality('dev');
+  ensureDir(out.root);
+  cpSync(srcQ, out.qdir, { recursive: true });
+  // ensure executable bits for scripts
+  try { chmodSync(join(out.qdir, 'check.sh'), 0o755); } catch {}
+  try { chmodSync(join(out.qdir, 'bin', 'run_checks.sh'), 0o755); } catch {}
+  return { qdir: out.qdir, check: out.check, stages: out.stages };
 }
 
 function runCommand(cmd, args, opts = {}) {
@@ -94,19 +108,27 @@ function runCommand(cmd, args, opts = {}) {
 async function resolveQualityPaths() {
   const local = localQualityPaths();
   if (local.hasLocal) return local;
+
+  if (process.platform === 'win32') {
+    eprintln('[WARN] Windows detected. aiq requires Bash (Git Bash/WSL) to run the embedded quality scripts.');
+  }
+
   if (process.env.AIQ_DEV_MODE === '1') {
     const warmed = devWarmCache();
     if (warmed && existsSync(warmed.check)) return { hasLocal: false, ...warmed };
   }
   const assetsQ = packageAssetsQualityDir();
   if (assetsQ) {
-    const out = cachedQuality('pkg');
+    const out = cachedQuality();
     ensureDir(out.root);
     cpSync(assetsQ, out.qdir, { recursive: true });
-    if (existsSync(out.check)) return { hasLocal: false, ...out };
+    // ensure executable bits for scripts
+    try { chmodSync(join(out.qdir, 'check.sh'), 0o755); } catch {}
+    try { chmodSync(join(out.qdir, 'bin', 'run_checks.sh'), 0o755); } catch {}
+    if (existsSync(out.check)) return { hasLocal: false, qdir: out.qdir, check: out.check, stages: out.stages };
   }
-  const cached = cachedQuality('dev');
-  if (existsSync(cached.check)) return { hasLocal: false, ...cached };
+  const cached = cachedQuality();
+  if (existsSync(cached.check)) return { hasLocal: false, qdir: cached.qdir, check: cached.check, stages: cached.stages };
   eprintln('[ERROR] No quality assets available (local, cache, or embedded).');
   process.exit(2);
 }
@@ -146,6 +168,10 @@ function gitChangedFiles(baseRef) {
 }
 
 async function cmdRun(args) {
+  // Subtle tip when invoked without explicit command
+  if ((args._.length === 0) && !args.help) {
+    println('Tip: run "aiq help" for more info.');
+  }
   const { check, stages } = await resolveQualityPaths();
   const cfg = loadJSON(CONFIG_FILE, {});
   let changedListPath = null;
@@ -210,7 +236,7 @@ async function cmdHook(args) {
   ensureDir(hookDir);
   const prog = loadJSON(PROGRESS_FILE, { current_stage: 1 });
   const upTo = Number.isInteger(prog.current_stage) ? prog.current_stage : 1;
-  const script = `#!/usr/bin/env bash\nset -euo pipefail\n# aiq pre-commit hook\nAIQ_BIN=aiq\nif command -v npx > /dev/null 2>&1; then\n  npx @tjalve/aiq run --up-to ${upTo}\nelse\n  $AIQ_BIN run --up-to ${upTo}\nfi\n`;
+  const script = `#!/usr/bin/env bash\nset -euo pipefail\n# aiq pre-commit hook\nAIQ_BIN=aiq\nif command -v bunx > /dev/null 2>&1; then\n  bunx @tjalve/aiq run --up-to ${upTo}\nelif command -v npx > /dev/null 2>&1; then\n  npx @tjalve/aiq run --up-to ${upTo}\nelse\n  $AIQ_BIN run --up-to ${upTo}\nfi\n`;
   writeFileSync(hookPath, script, { mode: 0o755 });
   println(`Installed pre-commit hook -> ${hookPath}`);
 }
@@ -278,6 +304,7 @@ function cmdConfig(args) {
     return;
   }
 
+  // Initialize default config if not present.
   if (!existsSync(CONFIG_FILE)) {
     const defaults = {
       stages: { order: [0,1,2,3,4,5,6,7,8,9], disabled: [] },
@@ -305,26 +332,30 @@ function cmdConfig(args) {
   }
 }
 
+async function cmdInstallTools(args) {
+  const { check, stages, qdir } = await resolveQualityPaths();
+  const installer = join(qdir, 'bin', 'install_tools.sh');
+  if (!existsSync(installer)) {
+    eprintln('[ERROR] install_tools.sh not found in embedded assets.');
+    process.exit(2);
+  }
+  const code = await runCommand('bash', [installer], { env: process.env });
+  process.exit(code);
+}
+
 function help() {
-  println(`@tjalve/aiq CLI
-
-Usage:
-  aiq run [--only N | --up-to N] [--verbose] [--dry-run] [--diff-only]
-  aiq config [--print-config | --set-stage N]
-  aiq hook install
-  aiq ci setup
-  aiq ignore write
-  aiq doctor
-
-Notes:
-  - In local dev, set AIQ_DEV_MODE=1 to warm cache from ./quality.
-  - In production npx, embedded assets will be resolved from package cache.
-`);
+  println(`@tjalve/aiq CLI\n\nUsage:\n  aiq run [--only N | --up-to N] [--verbose] [--dry-run] [--diff-only]\n  aiq config [--print-config | --set-stage N]\n  aiq hook install\n  aiq ci setup\n  aiq ignore write\n  aiq doctor\n  aiq install-tools\n\nNotes:\n  - Default: \"aiq\" runs \"aiq run\" and prints a tip for help.\n  - Embedded quality assets are cached under ~/.cache/aiq-cli/<version>/quality.\n  - In local dev, set AIQ_DEV_MODE=1 to warm cache from ./quality.\n  - Windows requires Bash (Git Bash/WSL) for the staged shell scripts.\n`);
 }
 
 async function main() {
   const args = parseArgs(process.argv);
-  if (args.help || args._.length === 0) return help();
+  // Default to run if no command provided
+  if (!args.help && args._.length === 0) {
+    println('Tip: run "aiq help" for more info.');
+    args._.push('run');
+  }
+  if (args.help) return help();
+
   const [cmd, sub] = args._;
   if (cmd === 'run') return cmdRun(args);
   if (cmd === 'config') return cmdConfig(args);
@@ -332,193 +363,8 @@ async function main() {
   if (cmd === 'ci' && sub === 'setup') return cmdCI(args);
   if (cmd === 'ignore' && sub === 'write') return cmdIgnore(args);
   if (cmd === 'doctor') return cmdDoctor(args);
+  if (cmd === 'install-tools') return cmdInstallTools(args);
   eprintln(`[ERROR] Unknown command: ${args._.join(' ')}`);
-  help();
-  process.exit(2);
-}
-
-main().catch((err) => { eprintln(err?.stack || String(err)); process.exit(1); });
-  if (cmd === 'run') return cmdRun(args);
-  if (cmd === 'config') return cmdConfig(args);
-  if (cmd === 'hook' && sub === 'install') return cmdHook(args);
-  if (cmd === 'ci' && sub === 'setup') return cmdCI(args);
-  if (cmd === 'ignore' && sub === 'write') return cmdIgnore(args);
-  if (cmd === 'doctor') return cmdDoctor(args);
-  eprintln(`[ERROR] Unknown command: ${args._.join(' ')}`);
-  help();
-  process.exit(2);
-}
-
-main().catch((err) => { eprintln(err?.stack || String(err)); process.exit(1); });
-
-#!/usr/bin/env node
-/*
-  @tjalve/quality - ephemeral CLI runner for the 9-stage quality pipeline.
-  Initial scaffold: run and config commands that delegate to local quality/ scripts when present.
-*/
-
-import { spawn } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { join, dirname } from 'node:path';
-import process from 'node:process';
-
-const CWD = process.cwd();
-const AIQ_DIR = join(CWD, '.aiq');
-const PROGRESS_FILE = join(AIQ_DIR, 'progress.json');
-const CONFIG_FILE = join(AIQ_DIR, 'quality.config.json');
-
-function print(s) { process.stdout.write(String(s)); }
-function println(s='') { process.stdout.write(String(s) + '\n'); }
-function eprintln(s='') { process.stderr.write(String(s) + '\n'); }
-
-function parseArgs(argv) {
-  const args = { _: [] };
-  for (let i = 2; i < argv.length; i++) {
-    const a = argv[i];
-    if (a === '--help' || a === '-h') args.help = true;
-    else if (a === 'run' || a === 'config' || a === 'hook' || a === 'ci' || a === 'ignore' || a === 'doctor' || a === 'report') args._.push(a);
-    else if (a === '--only') { args.only = Number(argv[++i]); }
-    else if (a === '--from') { args.from = Number(argv[++i]); }
-    else if (a === '--up-to') { args.upTo = Number(argv[++i]); }
-    else if (a === '--verbose' || a === '-v') { args.verbose = true; }
-    else if (a === '--dry-run') { args.dryRun = true; }
-    else if (a === '--set-stage') { args.setStage = Number(argv[++i]); }
-    else if (a === '--print-config') { args.printConfig = true; }
-    else if (a === '--changed-only') { args.changedOnly = true; }
-    else if (a === '--disable') { (args.disable ??= []).push(Number(argv[++i])); }
-    else { args._.push(a); }
-  }
-  return args;
-}
-
-function ensureDir(p) { if (!existsSync(p)) mkdirSync(p, { recursive: true }); }
-
-function loadJSON(path, fallback) {
-  try { return JSON.parse(readFileSync(path, 'utf8')); } catch { return fallback; }
-}
-
-function saveJSON(path, data) {
-  ensureDir(dirname(path));
-  writeFileSync(path, JSON.stringify(data, null, 2) + '\n');
-}
-
-function localQualityPaths() {
-  const root = CWD;
-  const qdir = join(root, 'quality');
-  const check = join(qdir, 'check.sh');
-  const stages = join(qdir, 'stages');
-  return { hasLocal: existsSync(check), qdir, check, stages };
-}
-
-function runCommand(cmd, args, opts = {}) {
-  return new Promise((resolve) => {
-    const child = spawn(cmd, args, { stdio: 'inherit', shell: false, ...opts });
-    child.on('exit', (code) => resolve(code ?? 0));
-  });
-}
-
-async function cmdRun(args) {
-  const { hasLocal, check, stages } = localQualityPaths();
-  if (!hasLocal) {
-    eprintln('[ERROR] Local quality/ directory not found. In npx mode this will execute from the package cache (TODO). For now, run inside this repo.');
-    process.exit(2);
-  }
-
-  // Map flags to our existing stage scripts.
-  if (Number.isInteger(args.only)) {
-    const n = args.only;
-    const stageFiles = {
-      0: '0-e2e.sh', 1: '1-lint.sh', 2: '2-format.sh', 3: '3-type_check.sh', 4: '4-unit_test.sh',
-      5: '5-sloc.sh', 6: '6-complexity.sh', 7: '7-maintainability.sh', 8: '8-coverage.sh', 9: '9-security.sh'
-    };
-    const f = stageFiles[n];
-    if (!f || !existsSync(join(stages, f))) {
-      eprintln(`[ERROR] Unknown or missing stage: ${n}`);
-      process.exit(2);
-    }
-    const stageArgs = [];
-    if (args.verbose) stageArgs.push('--verbose');
-    if (args.dryRun) stageArgs.push('--dry-run');
-    const code = await runCommand(join(stages, f), stageArgs);
-    process.exit(code);
-  }
-
-  // Default: run full pipeline via check.sh, optionally limit range.
-  const checkArgs = [];
-  if (Number.isInteger(args.upTo)) checkArgs.push(String(args.upTo));
-  if (args.verbose) checkArgs.push('--verbose');
-  if (args.dryRun) checkArgs.push('--dry-run');
-  const code = await runCommand(check, checkArgs);
-  process.exit(code);
-}
-
-function cmdConfig(args) {
-  if (args.printConfig) {
-    const cfg = loadJSON(CONFIG_FILE, {});
-    const prog = loadJSON(PROGRESS_FILE, {});
-    println(JSON.stringify({ config: cfg, progress: prog }, null, 2));
-    return;
-  }
-
-  if (Number.isInteger(args.setStage)) {
-    const prog = loadJSON(PROGRESS_FILE, { current_stage: 1, disabled: [], order: [0,1,2,3,4,5,6,7,8,9] });
-    prog.current_stage = args.setStage;
-    saveJSON(PROGRESS_FILE, prog);
-    println(`Set current_stage=${args.setStage} in ${PROGRESS_FILE}`);
-    return;
-  }
-
-  // Initialize default config if not present.
-  if (!existsSync(CONFIG_FILE)) {
-    const defaults = {
-      stages: { order: [0,1,2,3,4,5,6,7,8,9], disabled: [] },
-      overrides: {
-        5: { sloc_limit: 350 },
-        6: { ccn_limit: 12 },
-        7: { ccn_strict: 10, fn_nloc_limit: 200, param_limit: 6 }
-      },
-      languages: { python: { enabled: true }, javascript: { enabled: true }, dotnet: { enabled: true }, java: { enabled: true }, go: { enabled: true } },
-      excludes: [
-        "*/.git/*","*/node_modules/*","*/.venv/*","*/dist/*","*/build/*","*/target/*","*/bin/*","*/obj/*","*/__pycache__/*"
-      ],
-      ci: { github_actions: { enabled: true } }
-    };
-    saveJSON(CONFIG_FILE, defaults);
-    println(`Wrote default config to ${CONFIG_FILE}`);
-  } else {
-    println(`${CONFIG_FILE} already exists. Use --print-config to view.`);
-  }
-
-  // Ensure progress file exists too
-  if (!existsSync(PROGRESS_FILE)) {
-    const prog = { current_stage: 1, disabled: [], order: [0,1,2,3,4,5,6,7,8,9], last_run: null };
-    saveJSON(PROGRESS_FILE, prog);
-    println(`Wrote default progress to ${PROGRESS_FILE}`);
-  }
-}
-
-function help() {
-  println(`@tjalve/quality CLI (scaffold)
-
-Usage:
-  quality run [--only N | --up-to N] [--verbose] [--dry-run]
-  quality config [--print-config | --set-stage N]
-
-Notes:
-  - This scaffold delegates to local quality/ scripts when present.
-  - In npx mode, this package will execute embedded stages from cache (to be implemented next).
-`);
-}
-
-async function main() {
-  const args = parseArgs(process.argv);
-  if (args.help || args._.length === 0) return help();
-
-  const cmd = args._[0];
-  if (cmd === 'run') return cmdRun(args);
-  if (cmd === 'config') return cmdConfig(args);
-
-  eprintln(`[ERROR] Unknown command: ${cmd}`);
   help();
   process.exit(2);
 }
