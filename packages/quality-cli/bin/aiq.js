@@ -169,6 +169,15 @@ function envFromOverrides(cfg) {
   if (o7?.ccn_strict) env.LIZARD_CCN_STRICT = String(o7.ccn_strict);
   if (o7?.fn_nloc_limit) env.LIZARD_FN_NLOC_LIMIT = String(o7.fn_nloc_limit);
   if (o7?.param_limit) env.LIZARD_PARAM_LIMIT = String(o7.param_limit);
+
+  // Language enablement
+  const langs = cfg?.languages || {};
+  if (langs.python?.enabled !== undefined) env.AIQ_PYTHON_ENABLED = langs.python.enabled ? '1' : '0';
+  if (langs.javascript?.enabled !== undefined) env.AIQ_JAVASCRIPT_ENABLED = langs.javascript.enabled ? '1' : '0';
+  if (langs.dotnet?.enabled !== undefined) env.AIQ_DOTNET_ENABLED = langs.dotnet.enabled ? '1' : '0';
+  if (langs.java?.enabled !== undefined) env.AIQ_JAVA_ENABLED = langs.java.enabled ? '1' : '0';
+  if (langs.go?.enabled !== undefined) env.AIQ_GO_ENABLED = langs.go.enabled ? '1' : '0';
+
   return env;
 }
 
