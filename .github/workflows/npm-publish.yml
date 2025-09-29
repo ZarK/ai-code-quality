@@ -12,21 +12,18 @@ jobs:
     permissions:
       contents: read
       id-token: write
-     steps:
-       - uses: actions/checkout@v4
-       - name: Setup Node
-         uses: actions/setup-node@v4
-         with:
-           node-version: 'lts/*'
-           registry-url: 'https://registry.npmjs.org'
-           cache: 'npm'
-           cache-dependency-path: packages/quality-cli/package-lock.json
-       - name: Build package assets
-         working-directory: packages/quality-cli
-         run: |
-           npm ci || true
-           npm run build
-       - name: Publish
-         working-directory: packages/quality-cli
-         run: |
-           npm publish --provenance --access public
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 'lts/*'
+          registry-url: 'https://registry.npmjs.org'
+      - name: Build package assets
+        working-directory: packages/quality-cli
+        run: |
+          npm run build
+      - name: Publish
+        working-directory: packages/quality-cli
+        run: |
+          npm publish --provenance --access public
