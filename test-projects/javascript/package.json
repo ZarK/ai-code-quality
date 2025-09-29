@@ -1,0 +1,16 @@
+{
+	"name": "test-js-jest",
+	"version": "1.0.0",
+	"description": "Test JavaScript project with Jest",
+
+	"main": "index.js",
+	"scripts": {
+		"test": "jest"
+	},
+	"devDependencies": {
+		"jest": "^29.0.0"
+	},
+	"dependencies": {
+		"@tjalve/aiq": "file:../../packages/quality-cli/tjalve-aiq-0.1.1.tgz"
+	}
+}

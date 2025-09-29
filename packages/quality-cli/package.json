@@ -1,9 +1,35 @@
 {
   "name": "@tjalve/aiq",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "private": false,
   "type": "module",
-  "description": "Universal quality runner (staged pipeline) as an ephemeral npx CLI.",
+  "description": "Code quality pipeline designed for AI agents. Provides consistent, opinionated quality standards to prevent regressions and maintain code tidiness as projects grow. Auto-detects 8+ technologies with staged rollout, pre-commit hooks, and CI/CD integration.",
+  "keywords": [
+    "quality",
+    "linting",
+    "testing",
+    "code-quality",
+    "ci",
+    "pre-commit",
+    "javascript",
+    "typescript",
+    "python",
+    "java",
+    "dotnet",
+    "shell",
+    "html",
+    "css"
+  ],
+  "homepage": "https://github.com/ZarK/ai-code-quality#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ZarK/ai-code-quality.git"
+  },
+  "bugs": {
+    "url": "https://github.com/ZarK/ai-code-quality/issues"
+  },
+  "author": "ZarK",
+  "license": "MIT",
   "bin": {
     "aiq": "bin/aiq.js",
     "quality": "bin/aiq.js"
@@ -17,7 +43,6 @@
   "engines": {
     "node": ">=18"
   },
-  "license": "MIT",
   "files": [
     "bin",
     "assets/quality",

@@ -7,6 +7,42 @@ VERBOSE=0
 QUIET=0
 DRY_RUN=0
 
+# Load config from .aiq/quality.config.json if it exists
+load_config_env() {
+    local config_file=".aiq/quality.config.json"
+    if [[ -f "$config_file" ]] && command -v python3 >/dev/null 2>&1; then
+        # Load excludes
+        local excludes
+        excludes=$(python3 -c "import json, sys; data=json.load(sys.stdin); print(':'.join(data.get('excludes', [])))" <"$config_file" 2>/dev/null || true)
+        if [[ -n "$excludes" ]]; then
+            export AIQ_EXCLUDES="$excludes"
+        fi
+
+        # Load language settings
+        local python_enabled
+        python_enabled=$(python3 -c "import json, sys; data=json.load(sys.stdin); langs=data.get('languages', {}); print('1' if langs.get('python', {}).get('enabled', True) else '0')" <"$config_file" 2>/dev/null || echo "1")
+        export AIQ_PYTHON_ENABLED="$python_enabled"
+
+        local js_enabled
+        js_enabled=$(python3 -c "import json, sys; data=json.load(sys.stdin); langs=data.get('languages', {}); print('1' if langs.get('javascript', {}).get('enabled', True) else '0')" <"$config_file" 2>/dev/null || echo "1")
+        export AIQ_JAVASCRIPT_ENABLED="$js_enabled"
+
+        local dotnet_enabled
+        dotnet_enabled=$(python3 -c "import json, sys; data=json.load(sys.stdin); langs=data.get('languages', {}); print('1' if langs.get('dotnet', {}).get('enabled', True) else '0')" <"$config_file" 2>/dev/null || echo "1")
+        export AIQ_DOTNET_ENABLED="$dotnet_enabled"
+
+        local java_enabled
+        java_enabled=$(python3 -c "import json, sys; data=json.load(sys.stdin); langs=data.get('languages', {}); print('1' if langs.get('java', {}).get('enabled', True) else '0')" <"$config_file" 2>/dev/null || echo "1")
+        export AIQ_JAVA_ENABLED="$java_enabled"
+
+        local go_enabled
+        go_enabled=$(python3 -c "import json, sys; data=json.load(sys.stdin); langs=data.get('languages', {}); print('1' if langs.get('go', {}).get('enabled', True) else '0')" <"$config_file" 2>/dev/null || echo "1")
+        export AIQ_GO_ENABLED="$go_enabled"
+    fi
+}
+
+# Load config on script startup (moved after debug function definition)
+
 if [[ "${ACTIONS_STEP_DEBUG:-}" == "true" ]] || [[ "${ACTIONS_RUNNER_DEBUG:-}" == "true" ]]; then
     VERBOSE=1
     echo "[DEBUG] GitHub Actions verbose logging detected - enabling verbose output" >&2
@@ -47,6 +83,9 @@ debug() {
         echo "[DEBUG] $*" >&2
     fi
 }
+
+# Load config on script startup
+load_config_env
 
 error() {
     if [[ $QUIET -eq 0 ]]; then
@@ -176,7 +215,6 @@ python_tests_present() {
         -not -path \"*/.tox/*\" \
         -not -path \"*/.direnv/*\" \
         -not -path \"*/node_modules/*\" \
-        -not -path \"*/.git/*\" \
         -not -path \"*/__pycache__/*\" \
         -not -path \"*/.pytest_cache/*\" \
         -not -path \"*/.mypy_cache/*\" \
@@ -383,20 +421,36 @@ pytest_coverage() {
     if [[ -f ".coveragerc" ]]; then
         debug "Using local .coveragerc"
     else
-        debug "No local .coveragerc found, using embedded config"
+        debug "No local .coveragerc found, using embedded config: $QUALITY_DIR/configs/python/.coveragerc"
         cov_config="--cov-config $QUALITY_DIR/configs/python/.coveragerc"
     fi
     if command -v pytest >/dev/null 2>&1; then
         if command -v gtimeout >/dev/null 2>&1; then
-            gtimeout 300 pytest --rootdir . --cov=. --cov-report=term-missing --disable-warnings "$cov_config"
+            # shellcheck disable=SC2086
+            gtimeout 300 pytest --rootdir . --cov=. --cov-report=term-missing --disable-warnings $cov_config
+            local pytest_exit=$?
+            debug "pytest exit code: $pytest_exit"
+            return $pytest_exit
         else
-            pytest --rootdir . --cov=. --cov-report=term-missing --disable-warnings "$cov_config"
+            # shellcheck disable=SC2086
+            pytest --rootdir . --cov=. --cov-report=term-missing --disable-warnings $cov_config
+            local pytest_exit=$?
+            debug "pytest exit code: $pytest_exit"
+            return $pytest_exit
         fi
     else
         if command -v gtimeout >/dev/null 2>&1; then
-            gtimeout 300 .venv/bin/pytest --rootdir . --cov=. --cov-report=term-missing --disable-warnings "$cov_config"
+            # shellcheck disable=SC2086
+            gtimeout 300 .venv/bin/pytest --rootdir . --cov=. --cov-report=term-missing --disable-warnings $cov_config
+            local pytest_exit=$?
+            debug "pytest exit code: $pytest_exit"
+            return $pytest_exit
         else
-            .venv/bin/pytest --rootdir . --cov=. --cov-report=term-missing --disable-warnings "$cov_config"
+            # shellcheck disable=SC2086
+            .venv/bin/pytest --rootdir . --cov=. --cov-report=term-missing --disable-warnings $cov_config
+            local pytest_exit=$?
+            debug "pytest exit code: $pytest_exit"
+            return $pytest_exit
         fi
     fi
 }

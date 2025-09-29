@@ -1,0 +1,5 @@
+{
+  "dependencies": {
+    "@tjalve/aiq": "file:../packages/quality-cli/tjalve-aiq-0.1.0.tgz"
+  }
+}

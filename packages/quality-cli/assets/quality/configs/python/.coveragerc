@@ -1,12 +1,15 @@
 [run]
 source = .
-omit = 
+omit =
     */tests/*
     */test_*
     */.venv/*
     */venv/*
     */node_modules/*
     */quality/*
+    test-projects/*
+    test-aiq/*
+    test-pure-shell/*
 
 [report]
 exclude_lines =

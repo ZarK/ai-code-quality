@@ -59,8 +59,6 @@ set_current_stage() {
     echo "$new_stage" >"$PHASE_FILE"
 }
 
-
-
 total_time=0
 
 get_stage_name() {
@@ -170,9 +168,9 @@ main() {
 
     while [[ $# -gt 0 ]]; do
         case $1 in
-            --verbose|-v) verbose=1 ;;
-            --dry-run) dry_run=1 ;;
-            *) target_stage="$1" ;;
+        --verbose | -v) verbose=1 ;;
+        --dry-run) dry_run=1 ;;
+        *) target_stage="$1" ;;
         esac
         shift
     done
@@ -189,9 +187,8 @@ main() {
     current_stage=$(parse_stage_from_string "$current_stage")
 
     local failed_stages=()
-    local run_stages=""
 
-    for ((stage=0; stage<=target_stage; stage++)); do
+    for ((stage = 0; stage <= target_stage; stage++)); do
         if ! run_stage "$stage" "$verbose" "$dry_run"; then
             failed_stages+=("$stage")
         fi
