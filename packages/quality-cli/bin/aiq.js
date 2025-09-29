@@ -304,6 +304,13 @@ async function cmdHook(args) {
 }
 
 async function cmdCI(args) {
+  const cfg = loadJSON(CONFIG_FILE, {});
+  const ciEnabled = cfg?.ci?.github_actions?.enabled !== false;
+  if (!ciEnabled) {
+    println('GitHub Actions CI is disabled in config. Skipping workflow generation.');
+    return;
+  }
+
   const wfDir = join(CWD, '.github', 'workflows');
   const wfPath = join(wfDir, 'quality.yml');
   ensureDir(wfDir);
