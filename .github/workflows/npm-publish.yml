@@ -28,4 +28,4 @@ jobs:
       - name: Publish
         working-directory: packages/quality-cli
         run: |
-          npm publish --provenance --access public
+          npm publish --access public
