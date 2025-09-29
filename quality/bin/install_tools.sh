@@ -91,22 +91,11 @@ install_python_tools() {
 install_node_tools() {
     printf "\nInstalling Node.js tools via bun (uses asdf's active Node)...\n"
     if check_command bun; then
-        if [[ -f "$QUALITY_DIR/package.json" ]]; then
-            printf "Installing from package.json using bun...\n"
-            cd "$QUALITY_DIR"
-            if [[ $DRY_RUN -eq 1 ]]; then
-                echo "[DRY-RUN] (cd $QUALITY_DIR && bun install)"
-            else
-                bun install
-            fi
-            cd - >/dev/null
+        printf "Installing individual tools...\n"
+        if [[ $DRY_RUN -eq 1 ]]; then
+            echo "[DRY-RUN] bun add -g @biomejs/biome typescript"
         else
-            printf "package.json not found, installing individual tools...\n"
-            if [[ $DRY_RUN -eq 1 ]]; then
-                echo "[DRY-RUN] bun add -g @biomejs/biome typescript"
-            else
-                bun add -g @biomejs/biome typescript
-            fi
+            bun add -g @biomejs/biome typescript
         fi
 
         # Check if Playwright is needed in the project
