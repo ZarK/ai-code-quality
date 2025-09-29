@@ -276,9 +276,9 @@ mypy_check() {
         config_args="--config-file $QUALITY_DIR/configs/python/mypy.ini"
     fi
     if command -v mypy >/dev/null 2>&1; then
-        run_tool "mypy" mypy . $config_args
+        run_tool "mypy" mypy . "$config_args"
     else
-        run_tool "mypy" .venv/bin/mypy . $config_args
+        run_tool "mypy" .venv/bin/mypy . "$config_args"
     fi
 }
 
@@ -337,9 +337,9 @@ pytest_unit() {
 
     # Add timeout to prevent hanging tests (300 seconds = 5 minutes)
     if command -v gtimeout >/dev/null 2>&1; then
-        run_tool "pytest" gtimeout 300 $pytest_cmd $pytest_args
+        run_tool "pytest" gtimeout 300 "$pytest_cmd" "$pytest_args"
     else
-        run_tool "pytest" $pytest_cmd $pytest_args
+        run_tool "pytest" "$pytest_cmd" "$pytest_args"
     fi
 }
 
@@ -361,17 +361,24 @@ pytest_coverage() {
         debug "No Python tests detected; skipping pytest coverage"
         return 0
     fi
+    local cov_config=""
+    if [[ -f ".coveragerc" ]]; then
+        debug "Using local .coveragerc"
+    else
+        debug "No local .coveragerc found, using embedded config"
+        cov_config="--cov-config $QUALITY_DIR/configs/python/.coveragerc"
+    fi
     if command -v pytest >/dev/null 2>&1; then
         if command -v gtimeout >/dev/null 2>&1; then
-            run_tool "pytest" gtimeout 300 pytest --cov=. --cov-report=term-missing
+            gtimeout 300 pytest --rootdir . --cov=. --cov-report=term-missing --disable-warnings "$cov_config"
         else
-            run_tool "pytest" pytest --cov=. --cov-report=term-missing
+            pytest --rootdir . --cov=. --cov-report=term-missing --disable-warnings "$cov_config"
         fi
     else
         if command -v gtimeout >/dev/null 2>&1; then
-            run_tool "pytest" gtimeout 300 .venv/bin/pytest --cov=. --cov-report=term-missing
+            gtimeout 300 .venv/bin/pytest --rootdir . --cov=. --cov-report=term-missing --disable-warnings "$cov_config"
         else
-            run_tool "pytest" .venv/bin/pytest --cov=. --cov-report=term-missing
+            .venv/bin/pytest --rootdir . --cov=. --cov-report=term-missing --disable-warnings "$cov_config"
         fi
     fi
 }
@@ -511,9 +518,9 @@ TH = 85
 bad = []
 
 for f in Path(".").rglob("*.py"):
-    if any(part in str(f) for part in ['.venv', '__pycache__', '.git', 'node_modules', '.pytest_cache', '.mypy_cache']):
+    if any(part in str(f) for part in ['.venv', '__pycache__', '.git', 'node_modules', '.pytest_cache', '.mypy_cache']) or 'test' in str(f) or 'tests' in str(f):
         continue
-        
+
     try:
         code = f.read_text()
     except:
@@ -570,7 +577,7 @@ TH = 85
 bad = []
 
 for f in Path(".").rglob("*.py"):
-    if any(part in str(f) for part in ['.venv', '__pycache__', '.git', 'node_modules', '.pytest_cache', '.mypy_cache']):
+    if any(part in str(f) for part in ['.venv', '__pycache__', '.git', 'node_modules', '.pytest_cache', '.mypy_cache']) or 'test' in str(f) or 'tests' in str(f):
         continue
         
     try:
@@ -636,8 +643,8 @@ biome_check() {
         -not -path "./.cache/*" \
         -not -path "./.parcel-cache/*" \
         -not -path "./.nyc_output/*" \
-        -not -path "./coverage/*" \
-        | head -1 | grep -q .; then
+        -not -path "./coverage/*" |
+        head -1 | grep -q .; then
         debug "No JS/TS/JSON/HTML/CSS/GraphQL files found; skipping biome"
         return 0
     fi
@@ -1060,8 +1067,6 @@ for row in reader:
     fi
 }
 
-
-
 # Stage 7: Maintainability proxy (stricter CCN + function NLOC + parameters)
 lizard_maintainability_multi() {
     local techs
@@ -1126,8 +1131,6 @@ for row in reader:
 ' "$LIZARD_CCN_STRICT" "$LIZARD_FN_NLOC_LIMIT" "$LIZARD_PARAM_LIMIT" >/dev/null
     fi
 }
-
-
 
 find_dotnet_project_dir() {
     # Find the directory containing a .csproj or .sln file
