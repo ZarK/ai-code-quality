@@ -1,6 +1,6 @@
 {
   "name": "@tjalve/aiq",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "private": false,
   "type": "module",
   "description": "Code quality pipeline designed for AI agents. Provides consistent, opinionated quality standards to prevent regressions and maintain code tidiness as projects grow. Auto-detects 8+ technologies with staged rollout, pre-commit hooks, and CI/CD integration.",
