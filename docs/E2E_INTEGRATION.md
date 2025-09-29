@@ -1,3 +1,17 @@
+# E2E integration (stage 0)
+
+- Detects E2E directories: tests/e2e/, e2e/, test/e2e/
+- Supported:
+  - JS/TS: @playwright/test
+  - Python: pytest (optionally with Playwright)
+- Behavior:
+  - Runs before all other stages; skips cleanly if not detected.
+  - Failures mark stage 0 failed; other stages still run to surface full quality picture.
+
+Usage
+- Run only stage 0: quality/bin/phase_checks.sh 0
+- Run full pipeline: quality/check.sh
+
 # E2E Test Integration Guide
 
 E2E tests run as **Stage 0** before all other quality stages.

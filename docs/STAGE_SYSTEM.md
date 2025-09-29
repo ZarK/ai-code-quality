@@ -1,3 +1,22 @@
+# 9-stage quality pipeline
+
+See quality/stages/* and quality/lib/_stage_common.sh for the canonical implementation. This document summarizes responsibilities and defaults.
+
+Stages
+0. E2E — run end-to-end tests first (Playwright, pytest). Skips if none detected.
+1. Lint — ruff, biome, shellcheck, htmlhint, stylelint.
+2. Format — ruff format --check, biome format check, shfmt -d.
+3. Type check — mypy, tsc --noEmit.
+4. Unit tests — pytest, vitest.
+5. SLOC — per-file NLOC via radon (py) and lizard (others), default limit 350.
+6. Complexity — radon cc fails on C/D/E/F (py); lizard CCN limit 12.
+7. Maintainability — radon mi >= 40 (+ readability proxy >= 85); lizard stricter CCN <= 10, fn NLOC <= 200, params <= 6.
+8. Coverage — pytest --cov / vitest --coverage.
+
+Notes
+- Diff-only mode affects 1/2/5/6/7 only; other stages always full.
+- Thresholds can be overridden via .aiq/quality.config.json and are injected as env by the CLI.
+
 # 9-Stage Code Quality System
 
 ## Overview

@@ -1,0 +1,52 @@
+{
+  "name": "@tjalve/aiq",
+  "version": "0.1.7",
+  "private": false,
+  "type": "module",
+  "description": "Code quality pipeline designed for AI agents. Provides consistent, opinionated quality standards to prevent regressions and maintain code tidiness as projects grow. Auto-detects 8+ technologies with staged rollout, pre-commit hooks, and CI/CD integration.",
+  "keywords": [
+    "quality",
+    "linting",
+    "testing",
+    "code-quality",
+    "ci",
+    "pre-commit",
+    "javascript",
+    "typescript",
+    "python",
+    "java",
+    "dotnet",
+    "shell",
+    "html",
+    "css"
+  ],
+  "homepage": "https://github.com/ZarK/ai-code-quality#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ZarK/ai-code-quality.git"
+  },
+  "bugs": {
+    "url": "https://github.com/ZarK/ai-code-quality/issues"
+  },
+  "author": "ZarK",
+  "license": "MIT",
+  "bin": {
+    "aiq": "bin/aiq.js",
+    "quality": "bin/aiq.js"
+  },
+  "scripts": {
+    "dev": "node bin/quality.js --help",
+    "clean": "rm -rf assets/quality && mkdir -p assets/quality",
+    "build": "npm run clean && node ./scripts/build-assets.cjs",
+    "prepare": "npm run build"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "files": [
+    "bin",
+    "assets/quality",
+    "README.md",
+    "THIRD_PARTY_NOTICES.md"
+  ]
+}

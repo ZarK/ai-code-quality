@@ -1,0 +1,8 @@
+{
+	"scripts": {
+		"test": "echo 'test'"
+	},
+	"dependencies": {
+		"@tjalve/aiq": "file:../../packages/quality-cli/tjalve-aiq-0.1.5.tgz"
+	}
+}

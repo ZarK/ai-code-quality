@@ -1,0 +1,7 @@
+{
+  "excludes": [
+    "test-projects/*",
+    "test-aiq/*",
+    "test-pure-shell/*"
+  ]
+}

@@ -7,6 +7,42 @@ VERBOSE=0
 QUIET=0
 DRY_RUN=0
 
+# Load config from .aiq/quality.config.json if it exists
+load_config_env() {
+    local config_file=".aiq/quality.config.json"
+    if [[ -f "$config_file" ]] && command -v python3 >/dev/null 2>&1; then
+        # Load excludes
+        local excludes
+        excludes=$(python3 -c "import json, sys; data=json.load(sys.stdin); print(':'.join(data.get('excludes', [])))" <"$config_file" 2>/dev/null || true)
+        if [[ -n "$excludes" ]]; then
+            export AIQ_EXCLUDES="$excludes"
+        fi
+
+        # Load language settings
+        local python_enabled
+        python_enabled=$(python3 -c "import json, sys; data=json.load(sys.stdin); langs=data.get('languages', {}); print('1' if langs.get('python', {}).get('enabled', True) else '0')" <"$config_file" 2>/dev/null || echo "1")
+        export AIQ_PYTHON_ENABLED="$python_enabled"
+
+        local js_enabled
+        js_enabled=$(python3 -c "import json, sys; data=json.load(sys.stdin); langs=data.get('languages', {}); print('1' if langs.get('javascript', {}).get('enabled', True) else '0')" <"$config_file" 2>/dev/null || echo "1")
+        export AIQ_JAVASCRIPT_ENABLED="$js_enabled"
+
+        local dotnet_enabled
+        dotnet_enabled=$(python3 -c "import json, sys; data=json.load(sys.stdin); langs=data.get('languages', {}); print('1' if langs.get('dotnet', {}).get('enabled', True) else '0')" <"$config_file" 2>/dev/null || echo "1")
+        export AIQ_DOTNET_ENABLED="$dotnet_enabled"
+
+        local java_enabled
+        java_enabled=$(python3 -c "import json, sys; data=json.load(sys.stdin); langs=data.get('languages', {}); print('1' if langs.get('java', {}).get('enabled', True) else '0')" <"$config_file" 2>/dev/null || echo "1")
+        export AIQ_JAVA_ENABLED="$java_enabled"
+
+        local go_enabled
+        go_enabled=$(python3 -c "import json, sys; data=json.load(sys.stdin); langs=data.get('languages', {}); print('1' if langs.get('go', {}).get('enabled', True) else '0')" <"$config_file" 2>/dev/null || echo "1")
+        export AIQ_GO_ENABLED="$go_enabled"
+    fi
+}
+
+# Load config on script startup (moved after debug function definition)
+
 if [[ "${ACTIONS_STEP_DEBUG:-}" == "true" ]] || [[ "${ACTIONS_RUNNER_DEBUG:-}" == "true" ]]; then
     VERBOSE=1
     echo "[DEBUG] GitHub Actions verbose logging detected - enabling verbose output" >&2
@@ -48,6 +84,9 @@ debug() {
     fi
 }
 
+# Load config on script startup
+load_config_env
+
 error() {
     if [[ $QUIET -eq 0 ]]; then
         echo "[ERROR] $*" >&2
@@ -56,6 +95,28 @@ error() {
 
 detect_tech() {
     "$QUALITY_DIR/lib/detect_tech.sh"
+}
+
+# If diff-only is requested, read changed files list
+_read_changed_filelist() {
+    local list_file="${AIQ_CHANGED_FILELIST:-}"
+    if [[ -n "$list_file" && -f "$list_file" ]]; then
+        cat "$list_file"
+    fi
+}
+
+_changed_files_by_ext() {
+    local ext_regex="$1" # e.g. '\.py$'
+    if [[ "${AIQ_CHANGED_ONLY:-}" != "1" ]]; then
+        return 1
+    fi
+    local list
+    list=$(_read_changed_filelist | grep -E "$ext_regex" || true)
+    if [[ -n "$list" ]]; then
+        printf '%s\n' "$list"
+        return 0
+    fi
+    return 1
 }
 
 run_tool() {
@@ -78,6 +139,17 @@ run_tool() {
 }
 
 ruff_check() {
+    # Diff-only: limit to changed .py files if provided
+    local files
+    files=$(_changed_files_by_ext '\.py$') || files=""
+    if [[ -n "$files" ]]; then
+        if command -v ruff >/dev/null 2>&1; then
+            run_tool "ruff" ruff check "$files"
+        else
+            run_tool "ruff" .venv/bin/ruff check "$files"
+        fi
+        return $?
+    fi
     if command -v ruff >/dev/null 2>&1; then
         run_tool "ruff" ruff check .
     else
@@ -86,6 +158,16 @@ ruff_check() {
 }
 
 ruff_format() {
+    local files
+    files=$(_changed_files_by_ext '\.py$') || files=""
+    if [[ -n "$files" ]]; then
+        if command -v ruff >/dev/null 2>&1; then
+            run_tool "ruff" ruff format --check "$files"
+        else
+            run_tool "ruff" .venv/bin/ruff format --check "$files"
+        fi
+        return $?
+    fi
     if command -v ruff >/dev/null 2>&1; then
         run_tool "ruff" ruff format --check .
     else
@@ -93,41 +175,342 @@ ruff_format() {
     fi
 }
 
+# Utility: build find exclude args from AIQ_EXCLUDES
+_build_exclude_args() {
+    local excludes=""
+    if [[ -n "${AIQ_EXCLUDES:-}" ]]; then
+        IFS=':' read -ra PATTERNS <<<"$AIQ_EXCLUDES"
+        for pattern in "${PATTERNS[@]}"; do
+            excludes="$excludes -not -path \"$pattern\""
+        done
+    fi
+    echo "$excludes"
+}
+
+# Utility: detect python source files (excluding common vendor dirs and config excludes)
+python_files_present() {
+    local exclude_args
+    exclude_args=$(_build_exclude_args)
+    eval "find . \
+        -type f -name \"*.py\" \
+        -not -path \"*/.venv/*\" \
+        -not -path \"*/node_modules/*\" \
+        -not -path \"*/.git/*\" \
+        -not -path \"*/__pycache__/*\" \
+        -not -path \"*/.pytest_cache/*\" \
+        -not -path \"*/.mypy_cache/*\" \
+        $exclude_args | head -1 | grep -q ."
+}
+
+# Utility: detect python source files (excluding common vendor dirs and config excludes)
+python_source_files_present() {
+    local exclude_args
+    exclude_args=$(_build_exclude_args)
+    eval "find . \
+        -type f -name \"*.py\" \
+        -not -path \"*/.venv/*\" \
+        -not -path \"*/.venv-*/*\" \
+        -not -path \"*/.venv*/*\" \
+        -not -path \"*/venv/*\" \
+        -not -path \"*/.tox/*\" \
+        -not -path \"*/.direnv/*\" \
+        -not -path \"*/node_modules/*\" \
+        -not -path \"*/__pycache__/*\" \
+        -not -path \"*/.pytest_cache/*\" \
+        -not -path \"*/.mypy_cache/*\" \
+        -not -path \"*/test_*\" \
+        -not -path \"*/tests/*\" \
+        -not -path \"*/test-projects/*\" \
+        -not -path \"*/test-aiq/*\" \
+        -not -path \"*/test-pure-shell/*\" \
+        $exclude_args | head -1 | grep -q ."
+}
+
+# Utility: detect python test files
+python_tests_present() {
+    local exclude_args
+    exclude_args=$(_build_exclude_args)
+    eval "find . \
+        -type f \( -name \"test_*.py\" -o -name \"*_test.py\" \) \
+        -not -path \"*/.venv/*\" \
+        -not -path \"*/.venv-*/*\" \
+        -not -path \"*/.venv*/*\" \
+        -not -path \"*/venv/*\" \
+        -not -path \"*/.tox/*\" \
+        -not -path \"*/.direnv/*\" \
+        -not -path \"*/node_modules/*\" \
+        -not -path \"*/__pycache__/*\" \
+        -not -path \"*/.pytest_cache/*\" \
+        -not -path \"*/.mypy_cache/*\" \
+        $exclude_args | head -1 | grep -q ."
+}
+
+# Utility: detect JS/TS test files (vitest/jest conventions)
+js_tests_present() {
+    find . \
+        \( -path "*/.venv/*" -o -path "*/.venv-*/*" -o -path "*/.venv*/*" -o -path "*/venv/*" -o -path "*/.tox/*" -o -path "*/.direnv/*" -o -path "*/node_modules/*" -o -path "*/dist/*" -o -path "*/build/*" -o -path "*/.git/*" \) -prune -o \
+        \( -type f \
+        \( -name "*.test.js" -o -name "*.spec.js" -o -name "*.test.jsx" -o -name "*.spec.jsx" \
+        -o -name "*.test.ts" -o -name "*.spec.ts" -o -name "*.test.tsx" -o -name "*.spec.tsx" \) \
+        -o \( -path "*/__tests__/*" -a -type f \( -name "*.js" -o -name "*.jsx" -o -name "*.ts" -o -name "*.tsx" \) \) \) \
+        -print -quit | grep -q .
+}
+
+detect_js_test_runner() {
+    # Check package.json for test script and dependencies
+    if [[ -f "package.json" ]]; then
+        # Check test script in package.json first (most explicit)
+        if grep -q '"test":.*jest' package.json 2>/dev/null; then
+            echo "jest"
+            return 0
+        fi
+        if grep -q '"test":.*vitest' package.json 2>/dev/null; then
+            echo "vitest"
+            return 0
+        fi
+        if grep -q '"test":.*mocha' package.json 2>/dev/null; then
+            echo "mocha"
+            return 0
+        fi
+        if grep -q '"test":.*jasmine' package.json 2>/dev/null; then
+            echo "jasmine"
+            return 0
+        fi
+        # Check if jest is in dependencies or devDependencies
+        if grep -q '"jest"' package.json 2>/dev/null; then
+            echo "jest"
+            return 0
+        fi
+        # Check if vitest is in dependencies or devDependencies
+        if grep -q '"vitest"' package.json 2>/dev/null; then
+            echo "vitest"
+            return 0
+        fi
+        # Check if mocha is in dependencies or devDependencies
+        if grep -q '"mocha"' package.json 2>/dev/null; then
+            echo "mocha"
+            return 0
+        fi
+        # Check if jasmine is in dependencies or devDependencies
+        if grep -q '"jasmine"' package.json 2>/dev/null; then
+            echo "jasmine"
+            return 0
+        fi
+    fi
+    # Default to jest if no clear detection (most common)
+    echo "jest"
+}
+
+# Utility: detect .NET test projects/files
+_dotnet_csproj_is_test() {
+    local file="$1"
+    if grep -qi "<IsTestProject>\s*true\s*</IsTestProject>" "$file" 2>/dev/null; then
+        return 0
+    fi
+    case "$(basename "$file")" in
+    *Test*.csproj) return 0 ;;
+    esac
+    return 1
+}
+
+dotnet_tests_present() {
+    # Look for test csproj or common test directories
+    if find . -maxdepth 5 -type f -name "*.csproj" | while read -r f; do _dotnet_csproj_is_test "$f" && echo yes && break; done | grep -q yes; then
+        return 0
+    fi
+    find . \
+        \( -path "*/bin/*" -o -path "*/obj/*" -o -path "*/.git/*" -o -path "*/node_modules/*" \) -prune -o \
+        \( -path "*/tests/*" -o -path "*/test/*" \) -type f -name "*Test*.cs" -print -quit | grep -q .
+}
+
+# Utility: detect Java test files
+java_tests_present() {
+    if find . -path "*/src/test/java/*" -type f -name "*.java" -print -quit | grep -q .; then
+        return 0
+    fi
+    find . \
+        \( -path "*/.git/*" -o -path "*/build/*" -o -path "*/target/*" -o -path "*/node_modules/*" \) -prune -o \
+        -type f \( -name "*Test.java" -o -name "*Tests.java" \) -print -quit | grep -q .
+}
+
+# Utility: detect if any tests are present across supported tech
+any_tests_present() {
+    if python_tests_present; then return 0; fi
+    if js_tests_present; then return 0; fi
+    if dotnet_tests_present; then return 0; fi
+    if java_tests_present; then return 0; fi
+    return 1
+}
+
 mypy_check() {
-    if command -v mypy >/dev/null 2>&1; then
-        run_tool "mypy" mypy . --config-file "$QUALITY_DIR/configs/python/mypy.ini"
+    if ! python_source_files_present; then
+        debug "No Python source files detected; skipping mypy"
+        return 0
+    fi
+    local config_args=""
+    # Check for local mypy config files
+    if [[ -f "mypy.ini" || -f ".mypy.ini" || -f "pyproject.toml" || -f "setup.cfg" ]]; then
+        debug "Using local mypy config"
     else
-        run_tool "mypy" .venv/bin/mypy . --config-file "$QUALITY_DIR/configs/python/mypy.ini"
+        debug "No local mypy config found, using embedded config"
+        config_args="--config-file $QUALITY_DIR/configs/python/mypy.ini"
+    fi
+    if command -v mypy >/dev/null 2>&1; then
+        run_tool "mypy" mypy . "$config_args"
+    else
+        run_tool "mypy" .venv/bin/mypy . "$config_args"
     fi
 }
 
+detect_python_test_framework() {
+    # Check if pytest is configured or available
+    if command -v pytest >/dev/null 2>&1 || [[ -f ".venv/bin/pytest" ]]; then
+        # Check for pytest configuration files
+        if [[ -f "pytest.ini" || -f "pyproject.toml" || -f "tox.ini" || -f "setup.cfg" ]]; then
+            if [[ -f "pyproject.toml" ]] && grep -q "\[tool:pytest\]" pyproject.toml 2>/dev/null; then
+                echo "pytest"
+                return 0
+            fi
+            if [[ -f "setup.cfg" ]] && grep -q "\[tool:pytest\]" setup.cfg 2>/dev/null; then
+                echo "pytest"
+                return 0
+            fi
+            if [[ -f "pytest.ini" || -f "tox.ini" ]]; then
+                echo "pytest"
+                return 0
+            fi
+        fi
+        # If pytest is available but no config, still prefer it for its features
+        echo "pytest"
+        return 0
+    fi
+
+    # Fallback to unittest if test files exist
+    if python_tests_present; then
+        echo "unittest"
+        return 0
+    fi
+
+    echo "none"
+}
+
 pytest_unit() {
+    if ! python_tests_present; then
+        debug "No Python tests detected; skipping pytest"
+        return 0
+    fi
+
+    # Check if pytest-xdist is available for parallel execution
+    local pytest_cmd=""
+    local pytest_args=""
+
     if command -v pytest >/dev/null 2>&1; then
-        run_tool "pytest" pytest
+        pytest_cmd="pytest"
     else
-        run_tool "pytest" .venv/bin/pytest
+        pytest_cmd=".venv/bin/pytest"
+    fi
+
+    # Try to import pytest_xdist to check if parallel execution is available
+    if python3 -c "import pytest_xdist" 2>/dev/null; then
+        pytest_args="-n auto"
+    fi
+
+    # Add timeout to prevent hanging tests (300 seconds = 5 minutes)
+    if command -v gtimeout >/dev/null 2>&1; then
+        run_tool "pytest" gtimeout 300 "$pytest_cmd" "$pytest_args"
+    else
+        run_tool "pytest" "$pytest_cmd" "$pytest_args"
+    fi
+}
+
+unittest_unit() {
+    if ! python_tests_present; then
+        debug "No Python tests detected; skipping unittest"
+        return 0
+    fi
+    # Use python3 if available, otherwise python
+    if command -v python3 >/dev/null 2>&1; then
+        run_tool "unittest" python3 -m unittest discover -v
+    else
+        run_tool "unittest" python -m unittest discover -v
     fi
 }
 
 pytest_coverage() {
-    if command -v pytest >/dev/null 2>&1; then
-        run_tool "pytest" pytest --cov=. --cov-report=term-missing
+    if ! python_tests_present; then
+        debug "No Python tests detected; skipping pytest coverage"
+        return 0
+    fi
+    local cov_config=""
+    if [[ -f ".coveragerc" ]]; then
+        debug "Using local .coveragerc"
     else
-        run_tool "pytest" .venv/bin/pytest --cov=. --cov-report=term-missing
+        debug "No local .coveragerc found, using embedded config: $QUALITY_DIR/configs/python/.coveragerc"
+        cov_config="--cov-config $QUALITY_DIR/configs/python/.coveragerc"
+    fi
+    if command -v pytest >/dev/null 2>&1; then
+        if command -v gtimeout >/dev/null 2>&1; then
+            # shellcheck disable=SC2086
+            gtimeout 300 pytest --rootdir . --cov=. --cov-report=term-missing --disable-warnings $cov_config
+            local pytest_exit=$?
+            debug "pytest exit code: $pytest_exit"
+            return $pytest_exit
+        else
+            # shellcheck disable=SC2086
+            pytest --rootdir . --cov=. --cov-report=term-missing --disable-warnings $cov_config
+            local pytest_exit=$?
+            debug "pytest exit code: $pytest_exit"
+            return $pytest_exit
+        fi
+    else
+        if command -v gtimeout >/dev/null 2>&1; then
+            # shellcheck disable=SC2086
+            gtimeout 300 .venv/bin/pytest --rootdir . --cov=. --cov-report=term-missing --disable-warnings $cov_config
+            local pytest_exit=$?
+            debug "pytest exit code: $pytest_exit"
+            return $pytest_exit
+        else
+            # shellcheck disable=SC2086
+            .venv/bin/pytest --rootdir . --cov=. --cov-report=term-missing --disable-warnings $cov_config
+            local pytest_exit=$?
+            debug "pytest exit code: $pytest_exit"
+            return $pytest_exit
+        fi
+    fi
+}
+
+unittest_coverage() {
+    if ! python_tests_present; then
+        debug "No Python tests detected; skipping unittest coverage"
+        return 0
+    fi
+    # Use coverage.py with unittest if available
+    if command -v coverage >/dev/null 2>&1; then
+        run_tool "coverage" coverage run --source=. -m unittest discover
+        run_tool "coverage" coverage report
+    elif [[ -f ".venv/bin/coverage" ]]; then
+        run_tool "coverage" .venv/bin/coverage run --source=. -m unittest discover
+        run_tool "coverage" .venv/bin/coverage report
+    else
+        debug "coverage.py not available; running unittest without coverage"
+        unittest_unit
     fi
 }
 
 radon_sloc() {
     local radon_output
     local files
-    files=$(find . \
-        -type f -name "*.py" \
-        -not -path "*/.venv/*" \
-        -not -path "*/node_modules/*" \
-        -not -path "*/.git/*" \
-        -not -path "*/__pycache__/*" \
-        -not -path "*/.pytest_cache/*" \
-        -not -path "*/.mypy_cache/*" -print0)
+    local exclude_args
+    exclude_args=$(_build_exclude_args)
+    files=$(eval "find . \
+        -type f -name \"*.py\" \
+        -not -path \"*/.venv/*\" \
+        -not -path \"*/node_modules/*\" \
+        -not -path \"*/.git/*\" \
+        -not -path \"*/__pycache__/*\" \
+        -not -path \"*/.pytest_cache/*\" \
+        -not -path \"*/.mypy_cache/*\" \
+        $exclude_args -print0")
     if [[ -z "$files" ]]; then
         return 0
     fi
@@ -139,23 +522,37 @@ radon_sloc() {
 
     if [[ $VERBOSE -eq 1 ]]; then
         echo "$radon_output"
-    fi
-
-    echo "$radon_output" | awk '
-        BEGIN { current_file = ""; overall_exit_code = 0; }
-        /^[a-zA-Z0-9_\-\/\.]+\.py$/ { current_file = $0; }
-        /^[[:space:]]*SLOC:/ {
-            if (current_file != "") {
-                sloc_val = $2;
-                if (sloc_val >= 350) {
-                    printf "%s: %d lines >= 350\n", current_file, sloc_val > "/dev/stderr";
-                    overall_exit_code = 1;
+        echo "$radon_output" | awk '
+            BEGIN { current_file = ""; overall_exit_code = 0; }
+            /^[a-zA-Z0-9_\-\/\.]+\.py$/ { current_file = $0; }
+            /^[[:space:]]*SLOC:/ {
+                if (current_file != "") {
+                    sloc_val = $2;
+                    if (sloc_val >= 350) {
+                        printf "%s: %d lines >= 350\n", current_file, sloc_val > "/dev/stderr";
+                        overall_exit_code = 1;
+                    }
+                    current_file = "";
                 }
-                current_file = "";
             }
-        }
-        END { exit overall_exit_code; }
-    '
+            END { exit overall_exit_code; }
+        '
+    else
+        echo "$radon_output" | awk '
+            BEGIN { current_file = ""; overall_exit_code = 0; }
+            /^[a-zA-Z0-9_\-\/\.]+\.py$/ { current_file = $0; }
+            /^[[:space:]]*SLOC:/ {
+                if (current_file != "") {
+                    sloc_val = $2;
+                    if (sloc_val >= 350) {
+                        overall_exit_code = 1;
+                    }
+                    current_file = "";
+                }
+            }
+            END { exit overall_exit_code; }
+        ' >/dev/null
+    fi
 }
 
 radon_complexity() {
@@ -171,7 +568,7 @@ radon_complexity() {
     fi
 
     if echo "$radon_output" | grep -qE ' - (C|D|E|F) \('; then
-        if [[ $VERBOSE -eq 0 ]]; then
+        if [[ $VERBOSE -eq 1 ]]; then
             echo "$radon_output" >&2
         fi
         return 1
@@ -193,7 +590,7 @@ radon_maintainability() {
     if echo "$radon_output" | grep ' - [A-F] (' | awk -F'[()]' '{if ($2 != "" && $2 < 40) exit 1}'; then
         return 0
     else
-        if [[ $VERBOSE -eq 0 ]]; then
+        if [[ $VERBOSE -eq 1 ]]; then
             echo "$radon_output" >&2
         fi
         return 1
@@ -220,9 +617,9 @@ TH = 85
 bad = []
 
 for f in Path(".").rglob("*.py"):
-    if any(part in str(f) for part in ['.venv', '__pycache__', '.git', 'node_modules', '.pytest_cache', '.mypy_cache']):
+    if any(part in str(f) for part in ['.venv', '__pycache__', '.git', 'node_modules', '.pytest_cache', '.mypy_cache']) or 'test' in str(f) or 'tests' in str(f):
         continue
-        
+
     try:
         code = f.read_text()
     except:
@@ -279,7 +676,7 @@ TH = 85
 bad = []
 
 for f in Path(".").rglob("*.py"):
-    if any(part in str(f) for part in ['.venv', '__pycache__', '.git', 'node_modules', '.pytest_cache', '.mypy_cache']):
+    if any(part in str(f) for part in ['.venv', '__pycache__', '.git', 'node_modules', '.pytest_cache', '.mypy_cache']) or 'test' in str(f) or 'tests' in str(f):
         continue
         
     try:
@@ -328,18 +725,56 @@ PY
 }
 
 biome_check() {
+    # Only run biome if relevant files exist (excluding generated/cache files)
+    if ! find . -type f \( -name "*.js" -o -name "*.jsx" -o -name "*.ts" -o -name "*.tsx" -o -name "*.json" -o -name "*.html" -o -name "*.css" -o -name "*.graphql" -o -name "*.gql" \) \
+        -not -path "./node_modules/*" \
+        -not -path "./.git/*" \
+        -not -path "./.mypy_cache/*" \
+        -not -path "./__pycache__/*" \
+        -not -path "./.pytest_cache/*" \
+        -not -path "./.ruff_cache/*" \
+        -not -path "./dist/*" \
+        -not -path "./build/*" \
+        -not -path "./target/*" \
+        -not -path "./.next/*" \
+        -not -path "./.nuxt/*" \
+        -not -path "./.vuepress/*" \
+        -not -path "./.cache/*" \
+        -not -path "./.parcel-cache/*" \
+        -not -path "./.nyc_output/*" \
+        -not -path "./coverage/*" |
+        head -1 | grep -q .; then
+        debug "No JS/TS/JSON/HTML/CSS/GraphQL files found; skipping biome"
+        return 0
+    fi
     if command -v bunx >/dev/null 2>&1; then
-        run_tool "biome" bunx biome check --reporter=summary .
+        run_tool "biome" bunx @biomejs/biome check --linter-enabled=true --formatter-enabled=false --reporter=summary .
     else
-        run_tool "biome" npx @biomejs/biome check --reporter=summary .
+        run_tool "biome" npx @biomejs/biome check --linter-enabled=true --formatter-enabled=false --reporter=summary .
     fi
 }
 
 biome_format() {
-    if command -v bunx >/dev/null 2>&1; then
-        run_tool "biome" bunx @biomejs/biome check --formatter-enabled=true --linter-enabled=false --organize-imports-enabled=false .
+    # Only run biome format if relevant files exist
+    if ! find . -type f \( -name "*.js" -o -name "*.jsx" -o -name "*.ts" -o -name "*.tsx" -o -name "*.json" -o -name "*.html" -o -name "*.css" -o -name "*.graphql" -o -name "*.gql" \) -not -path "./node_modules/*" -not -path "./.git/*" -not -path "./.mypy_cache/*" -not -path "./__pycache__/*" | head -1 | grep -q .; then
+        debug "No JS/TS/JSON/HTML/CSS/GraphQL files found; skipping biome format"
+        return 0
+    fi
+    local files
+    files=$(_changed_files_by_ext '\.(js|jsx|ts|tsx|json|html|css|graphql|gql)$') || files=""
+    if [[ -n "$files" ]]; then
+        if command -v bunx >/dev/null 2>&1; then
+            run_tool "biome" bunx @biomejs/biome check --formatter-enabled=true --linter-enabled=false "$files"
+        else
+            run_tool "biome" npx @biomejs/biome check --formatter-enabled=true --linter-enabled=false "$files"
+        fi
     else
-        run_tool "biome" npx @biomejs/biome check --formatter-enabled=true --linter-enabled=false --organize-imports-enabled=false .
+        # Full check if not in diff-only mode
+        if command -v bunx >/dev/null 2>&1; then
+            run_tool "biome" bunx @biomejs/biome check --formatter-enabled=true --linter-enabled=false .
+        else
+            run_tool "biome" npx @biomejs/biome check --formatter-enabled=true --linter-enabled=false .
+        fi
     fi
 }
 
@@ -353,19 +788,91 @@ tsc_check() {
     fi
 }
 
-vitest_unit() {
-    if command -v bunx >/dev/null 2>&1; then
-        run_tool "vitest" bunx vitest run
+js_test_unit() {
+    # Skip if no JS/TS tests present
+    if ! js_tests_present; then
+        debug "No JS/TS tests detected; skipping JS tests"
+        return 0
+    fi
+
+    local runner
+    runner=$(detect_js_test_runner)
+
+    if [[ "$runner" == "vitest" ]]; then
+        debug "Running vitest unit tests..."
+        if [[ -x "./node_modules/.bin/vitest" ]]; then
+            run_tool "vitest" ./node_modules/.bin/vitest run --reporter=verbose
+        elif command -v bunx >/dev/null 2>&1; then
+            run_tool "vitest" bunx vitest run --reporter=verbose
+        else
+            run_tool "vitest" npx vitest run --reporter=verbose
+        fi
+    elif [[ "$runner" == "jest" ]]; then
+        debug "Running jest unit tests..."
+        if [[ -x "./node_modules/.bin/jest" ]]; then
+            run_tool "jest" ./node_modules/.bin/jest --maxWorkers=50%
+        elif command -v bunx >/dev/null 2>&1; then
+            run_tool "jest" bunx jest --maxWorkers=50%
+        else
+            run_tool "jest" npx jest --maxWorkers=50%
+        fi
+    elif [[ "$runner" == "mocha" ]]; then
+        debug "Running mocha unit tests..."
+        if [[ -x "./node_modules/.bin/mocha" ]]; then
+            run_tool "mocha" ./node_modules/.bin/mocha --parallel
+        elif command -v bunx >/dev/null 2>&1; then
+            run_tool "mocha" bunx mocha --parallel
+        else
+            run_tool "mocha" npx mocha --parallel
+        fi
+    elif [[ "$runner" == "jasmine" ]]; then
+        debug "Running jasmine unit tests..."
+        if [[ -x "./node_modules/.bin/jasmine" ]]; then
+            run_tool "jasmine" ./node_modules/.bin/jasmine
+        elif command -v bunx >/dev/null 2>&1; then
+            run_tool "jasmine" bunx jasmine
+        else
+            run_tool "jasmine" npx jasmine
+        fi
     else
-        run_tool "vitest" npx vitest run
+        debug "Unknown test runner: $runner; skipping JS tests"
+        return 0
     fi
 }
 
-vitest_coverage() {
-    if command -v bunx >/dev/null 2>&1; then
-        run_tool "vitest" bunx vitest run --coverage
+js_test_coverage() {
+    # Skip if no JS/TS tests present
+    if ! js_tests_present; then
+        debug "No JS/TS tests detected; skipping JS test coverage"
+        return 0
+    fi
+
+    local runner
+    runner=$(detect_js_test_runner)
+
+    if [[ "$runner" == "vitest" ]]; then
+        debug "Running vitest coverage..."
+        if command -v bunx >/dev/null 2>&1; then
+            run_tool "vitest" bunx vitest run --coverage
+        else
+            run_tool "vitest" npx vitest run --coverage
+        fi
+    elif [[ "$runner" == "jest" ]]; then
+        debug "Running jest coverage..."
+        if command -v bunx >/dev/null 2>&1; then
+            run_tool "jest" bunx jest --coverage
+        else
+            run_tool "jest" npx jest --coverage
+        fi
+    elif [[ "$runner" == "mocha" ]]; then
+        debug "Mocha coverage not yet supported; skipping"
+        return 0
+    elif [[ "$runner" == "jasmine" ]]; then
+        debug "Jasmine coverage not yet supported; skipping"
+        return 0
     else
-        run_tool "vitest" npx vitest run --coverage
+        debug "Unknown test runner: $runner; skipping JS test coverage"
+        return 0
     fi
 }
 
@@ -395,18 +902,13 @@ shellcheck_check() {
             echo "$shell_files" | xargs shellcheck "${shellcheck_args[@]}"
         fi
     else
-        local shellcheck_output
+        # Non-verbose: suppress shellcheck output; return only exit status
         if [[ ${#shellcheck_args[@]} -eq 0 ]]; then
-            shellcheck_output=$(echo "$shell_files" | xargs shellcheck 2>&1)
+            echo "$shell_files" | xargs shellcheck >/dev/null 2>&1
         else
-            shellcheck_output=$(echo "$shell_files" | xargs shellcheck "${shellcheck_args[@]}" 2>&1)
+            echo "$shell_files" | xargs shellcheck "${shellcheck_args[@]}" >/dev/null 2>&1
         fi
-        local exit_code=$?
-
-        if [[ $exit_code -ne 0 ]]; then
-            echo "$shellcheck_output" >&2
-            return $exit_code
-        fi
+        return $?
     fi
 }
 
@@ -494,6 +996,9 @@ _lizard_lang_flags() {
     if [[ "$techs" == *"java"* ]]; then
         flags+=("-l" "java")
     fi
+    if [[ "$techs" == *"kotlin"* ]]; then
+        flags+=("-l" "kotlin")
+    fi
     if [[ "$techs" == *"js"* || "$techs" == *"react"* ]]; then
         flags+=("-l" "javascript")
     fi
@@ -506,17 +1011,18 @@ _lizard_lang_flags() {
     echo "${flags[@]}"
 }
 
-# Common runner to emit JSON for selected languages; stdout = JSON
-_lizard_run_json() {
+# Common runner to emit CSV for selected languages; stdout = CSV
+_lizard_run_csv() {
     local techs="$1"
     shift
+    local lang_flags
     lang_flags=$(_lizard_lang_flags "$techs")
     # If no supported langs in techs, no-op
     if [[ -z "$lang_flags" ]]; then
         return 0
     fi
 
-    local args=("-j")
+    local args=("--csv")
     # Excludes
     for ex in "${LIZARD_EXCLUDES[@]}"; do
         args+=("-x" "$ex")
@@ -524,9 +1030,18 @@ _lizard_run_json() {
     # language flags
     # shellcheck disable=SC2206
     args+=($lang_flags)
-    args+=(".")
 
-    debug "Running Lizard JSON with args: ${args[*]}"
+    # Diff-only: pass changed files instead of '.' when available
+    if [[ "${AIQ_CHANGED_ONLY:-}" == "1" ]] && [[ -n "${AIQ_CHANGED_FILELIST:-}" ]] && [[ -f "${AIQ_CHANGED_FILELIST}" ]]; then
+        while IFS= read -r f; do
+            # include only matching source files for selected languages; let lizard ignore others
+            args+=("$f")
+        done <"${AIQ_CHANGED_FILELIST}"
+    else
+        args+=(".")
+    fi
+
+    debug "Running Lizard with args: ${args[*]}"
     _lizard_uvx "${args[@]}"
 }
 
@@ -538,53 +1053,58 @@ lizard_sloc_multi() {
     else
         techs=$(detect_tech)
     fi
-    local json
-    if ! json=$(_lizard_run_json "$techs"); then
+    local csv
+    if ! csv=$(_lizard_run_csv "$techs"); then
         return 1
     fi
-    if [[ -z "$json" ]]; then
-        # Nothing to check
+    if [[ -z "$csv" ]]; then
         return 0
     fi
-
     if [[ $VERBOSE -eq 1 ]]; then
-        echo "$json" | python3 -c '
-import json, sys, collections
-limit = int(sys.argv[1])
-data = json.load(sys.stdin)
-by_file = collections.defaultdict(int)
-for item in data:
-    fn = item.get("filename") or item.get("path")
-    nloc = item.get("nloc") or 0
-    if fn:
-        by_file[fn] += int(nloc)
-failed = []
-for fn, total in sorted(by_file.items()):
-    print(f"{fn}: total NLOC ~ {total}")
-    if total >= limit:
-        failed.append((fn, total))
-if failed:
-    print("\nFiles exceeding SLOC limit:", file=sys.stderr)
-    for fn, total in failed:
-        print(f"{fn}: {total} >= {limit}", file=sys.stderr)
+        echo "$csv" | python3 -c '
+import csv, sys
+sloc_limit = int(sys.argv[1])
+reader = csv.reader(sys.stdin)
+file_sloc = {}
+violations = []
+for row in reader:
+    if len(row) < 7:
+        continue
+    try:
+        nloc = int(row[0])
+        filename = row[6]
+        file_sloc[filename] = file_sloc.get(filename, 0) + nloc
+    except (ValueError, IndexError):
+        continue
+
+for filename, total_sloc in file_sloc.items():
+    if total_sloc >= sloc_limit:
+        violations.append((filename, total_sloc))
+
+for filename, sloc in violations:
+    print(f"{filename}: {sloc} lines >= {sloc_limit}")
+if violations:
     sys.exit(1)
 ' "$LIZARD_SLOC_LIMIT"
     else
-        echo "$json" | python3 -c '
-import json, sys, collections
-limit = int(sys.argv[1])
-data = json.load(sys.stdin)
-by_file = collections.defaultdict(int)
-for item in data:
-    fn = item.get("filename") or item.get("path")
-    nloc = item.get("nloc") or 0
-    if fn:
-        by_file[fn] += int(nloc)
-failed = [(fn, n) for fn, n in by_file.items() if n >= limit]
-if failed:
-    for fn, total in failed:
-        print(f"{fn}: {total} >= {limit}", file=sys.stderr)
-    sys.exit(1)
+        echo "$csv" | python3 -c '
+import csv, sys
+sloc_limit = int(sys.argv[1])
+reader = csv.reader(sys.stdin)
+file_sloc = {}
+for row in reader:
+    if len(row) < 7:
+        continue
+    try:
+        nloc = int(row[0])
+        filename = row[6]
+        file_sloc[filename] = file_sloc.get(filename, 0) + nloc
+    except (ValueError, IndexError):
+        continue
+
+for filename, total_sloc in file_sloc.items():
+    if total_sloc >= sloc_limit:
+        sys.exit(1)
 ' "$LIZARD_SLOC_LIMIT" >/dev/null
     fi
 }
@@ -597,49 +1117,51 @@ lizard_complexity_multi() {
     else
         techs=$(detect_tech)
     fi
-    local json
-    if ! json=$(_lizard_run_json "$techs"); then
+    local csv
+    if ! csv=$(_lizard_run_csv "$techs"); then
         return 1
     fi
-    if [[ -z "$json" ]]; then
+    if [[ -z "$csv" ]]; then
         return 0
     fi
     if [[ $VERBOSE -eq 1 ]]; then
-        echo "$json" | python3 -c '
-import json, sys
+        echo "$csv" | python3 -c '
+import csv, sys
 ccn_limit = int(sys.argv[1])
-data = json.load(sys.stdin)
-viol = []
-for i in data:
-    ccn = i.get("cyclomatic_complexity") or i.get("ccn")
-    if ccn is None:
+reader = csv.reader(sys.stdin)
+violations = []
+for row in reader:
+    if len(row) < 11:
         continue
     try:
-        ccn = int(ccn)
-    except Exception:
+        ccn = int(row[1])
+        filename = row[6]
+        function_name = row[7]
+        start_line = int(row[9])
+        if ccn > ccn_limit:
+            violations.append((filename, start_line, function_name, ccn))
+    except (ValueError, IndexError):
         continue
-    if ccn > ccn_limit:
-        viol.append(i)
-for v in viol:
-    print(f"{v.get(\"filename\")}:{v.get(\"start_line\")} {v.get(\"name\")} CCN={v.get(\"cyclomatic_complexity\") or v.get(\"ccn\")} \u003e {ccn_limit}")
-if viol:
+
+for filename, start_line, function_name, ccn in violations:
+    print(f"{filename}:{start_line} {function_name} CCN={ccn} > {ccn_limit}")
+if violations:
     sys.exit(1)
 ' "$LIZARD_CCN_LIMIT"
     else
-        echo "$json" | python3 -c '
-import json, sys
+        echo "$csv" | python3 -c '
+import csv, sys
 ccn_limit = int(sys.argv[1])
-data = json.load(sys.stdin)
-for i in data:
-    ccn = i.get("cyclomatic_complexity") or i.get("ccn")
-    if ccn is None:
+reader = csv.reader(sys.stdin)
+for row in reader:
+    if len(row) < 11:
         continue
     try:
-        ccn = int(ccn)
-    except Exception:
+        ccn = int(row[1])
+        if ccn > ccn_limit:
+            sys.exit(1)
+    except (ValueError, IndexError):
         continue
-    if ccn > ccn_limit:
-        sys.exit(1)
 ' "$LIZARD_CCN_LIMIT" >/dev/null
     fi
 }
@@ -652,72 +1174,100 @@ lizard_maintainability_multi() {
     else
         techs=$(detect_tech)
     fi
-    local json
-    if ! json=$(_lizard_run_json "$techs"); then
+    local csv
+    if ! csv=$(_lizard_run_csv "$techs"); then
         return 1
     fi
-    if [[ -z "$json" ]]; then
+    if [[ -z "$csv" ]]; then
         return 0
     fi
     if [[ $VERBOSE -eq 1 ]]; then
-        echo "$json" | python3 -c '
-import json, sys
+        echo "$csv" | python3 -c '
+import csv, sys
 ccn_limit = int(sys.argv[1])
 fn_nloc_limit = int(sys.argv[2])
 param_limit = int(sys.argv[3])
-data = json.load(sys.stdin)
-viol = []
-for i in data:
-    ccn = i.get("cyclomatic_complexity") or i.get("ccn") or 0
-    nloc = i.get("nloc") or 0
-    params = i.get("parameters") or i.get("parameter_count") or 0
-    try:
-        ccn = int(ccn)
-        nloc = int(nloc)
-        params = int(params)
-    except Exception:
+reader = csv.reader(sys.stdin)
+violations = []
+for row in reader:
+    if len(row) < 11:
         continue
-    if ccn > ccn_limit or nloc > fn_nloc_limit or params > param_limit:
-        viol.append(i)
-for v in viol:
-    print(f"{v.get(\"filename\")}:{v.get(\"start_line\")} {v.get(\"name\")} CCN={v.get(\"cyclomatic_complexity\") or v.get(\"ccn\")}, NLOC={v.get(\"nloc\")}, Params={v.get(\"parameters\") or v.get(\"parameter_count\")}")
-if viol:
+    try:
+        ccn = int(row[1])
+        nloc = int(row[0])
+        params = int(row[3])
+        filename = row[6]
+        function_name = row[7]
+        start_line = int(row[9])
+        if ccn > ccn_limit or nloc > fn_nloc_limit or params > param_limit:
+            violations.append((filename, start_line, function_name, ccn, nloc, params))
+    except (ValueError, IndexError):
+        continue
+
+for filename, start_line, function_name, ccn, nloc, params in violations:
+    print(f"{filename}:{start_line} {function_name} CCN={ccn}, NLOC={nloc}, Params={params}")
+if violations:
     sys.exit(1)
 ' "$LIZARD_CCN_STRICT" "$LIZARD_FN_NLOC_LIMIT" "$LIZARD_PARAM_LIMIT"
     else
-        echo "$json" | python3 -c '
-import json, sys
+        echo "$csv" | python3 -c '
+import csv, sys
 ccn_limit = int(sys.argv[1])
 fn_nloc_limit = int(sys.argv[2])
 param_limit = int(sys.argv[3])
-data = json.load(sys.stdin)
-for i in data:
-    ccn = i.get("cyclomatic_complexity") or i.get("ccn") or 0
-    nloc = i.get("nloc") or 0
-    params = i.get("parameters") or i.get("parameter_count") or 0
-    try:
-        ccn = int(ccn)
-        nloc = int(nloc)
-        params = int(params)
-    except Exception:
+reader = csv.reader(sys.stdin)
+for row in reader:
+    if len(row) < 11:
         continue
-    if ccn > ccn_limit or nloc > fn_nloc_limit or params > param_limit:
-        sys.exit(1)
+    try:
+        ccn = int(row[1])
+        nloc = int(row[0])
+        params = int(row[3])
+        if ccn > ccn_limit or nloc > fn_nloc_limit or params > param_limit:
+            sys.exit(1)
+    except (ValueError, IndexError):
+        continue
 ' "$LIZARD_CCN_STRICT" "$LIZARD_FN_NLOC_LIMIT" "$LIZARD_PARAM_LIMIT" >/dev/null
+    fi
+}
+
+find_dotnet_project_dir() {
+    # Find the directory containing a .csproj or .sln file
+    local proj_dir
+    proj_dir=$(find . -maxdepth 3 -type f \( -name "*.csproj" -o -name "*.sln" \) | head -1 | xargs dirname 2>/dev/null || true)
+    if [[ -n "$proj_dir" && -d "$proj_dir" ]]; then
+        echo "$proj_dir"
+    else
+        echo "."
     fi
 }
 
 dotnet_format_check() {
     if command -v dotnet >/dev/null 2>&1; then
-        run_tool "dotnet-format" dotnet format --verify-no-changes
+        local proj_dir
+        proj_dir=$(find_dotnet_project_dir)
+        run_tool "dotnet-format" dotnet format "$proj_dir" --verify-no-changes
     else
         debug "dotnet not found; skipping dotnet format"
     fi
 }
 
+dotnet_lint_check() {
+    if command -v dotnet >/dev/null 2>&1; then
+        # Use dotnet format to catch both formatting and style issues
+        local proj_dir
+        proj_dir=$(find_dotnet_project_dir)
+        run_tool "dotnet-lint" dotnet format "$proj_dir" --verify-no-changes --severity warn
+    else
+        debug "dotnet not found; skipping dotnet lint"
+    fi
+}
+
 dotnet_build_check() {
     if command -v dotnet >/dev/null 2>&1; then
-        run_tool "dotnet-build" dotnet build -warnaserror
+        local proj_dir
+        proj_dir=$(find_dotnet_project_dir)
+        run_tool "dotnet-build" dotnet build -warnaserror "$proj_dir"
     else
         debug "dotnet not found; skipping dotnet build"
     fi
@@ -725,7 +1275,9 @@ dotnet_build_check() {
 
 dotnet_test() {
     if command -v dotnet >/dev/null 2>&1; then
-        run_tool "dotnet-test" dotnet test --nologo
+        local proj_dir
+        proj_dir=$(find_dotnet_project_dir)
+        run_tool "dotnet-test" dotnet test --nologo "$proj_dir"
     else
         debug "dotnet not found; skipping dotnet test"
     fi
@@ -733,12 +1285,14 @@ dotnet_test() {
 
 dotnet_coverage() {
     if command -v dotnet >/dev/null 2>&1; then
+        local proj_dir
+        proj_dir=$(find_dotnet_project_dir)
         # Attempt coverlet via data collector if configured
-        if dotnet test -l "console;verbosity=minimal" -p:CollectCoverage=true -p:CoverletOutputFormat=cobertura >/dev/null 2>&1; then
-            run_tool "dotnet-coverage" dotnet test -p:CollectCoverage=true -p:CoverletOutputFormat=cobertura
+        if dotnet test "$proj_dir" -l "console;verbosity=minimal" -p:CollectCoverage=true -p:CoverletOutputFormat=cobertura >/dev/null 2>&1; then
+            run_tool "dotnet-coverage" dotnet test "$proj_dir" -p:CollectCoverage=true -p:CoverletOutputFormat=cobertura
         else
             debug "Coverlet not configured; running dotnet test without coverage"
-            run_tool "dotnet-test" dotnet test --nologo
+            run_tool "dotnet-test" dotnet test --nologo "$proj_dir"
         fi
     else
         debug "dotnet not found; skipping dotnet coverage"
@@ -837,12 +1391,80 @@ java_coverage() {
 }
 
 # --------------------
+# Kotlin helpers
+# --------------------
+
+kotlin_format_check() {
+    # Prefer ktlint if available
+    if command -v ktlint >/dev/null 2>&1; then
+        run_tool "ktlint" ktlint --format --log-level=error "**/*.kt" || return 1
+    elif { [[ -f "build.gradle" ]] || [[ -f "build.gradle.kts" ]]; } && command -v ./gradlew >/dev/null 2>&1; then
+        run_tool "gradle-spotless" ./gradlew -q spotlessCheck || return 1
+    elif { [[ -f "build.gradle" ]] || [[ -f "build.gradle.kts" ]]; } && command -v gradle >/dev/null 2>&1; then
+        run_tool "gradle-spotless" gradle -q spotlessCheck || return 1
+    else
+        debug "No Kotlin formatter configured (ktlint/Spotless) — skipping format check"
+    fi
+}
+
+kotlin_lint_check() {
+    # Prefer ktlint if available
+    if command -v ktlint >/dev/null 2>&1; then
+        run_tool "ktlint" ktlint --log-level=error "**/*.kt" || return 1
+    elif command -v detekt >/dev/null 2>&1; then
+        run_tool "detekt" detekt --config detekt-config.yml 2>/dev/null || detekt || return 1
+    elif { [[ -f "build.gradle" ]] || [[ -f "build.gradle.kts" ]]; } && command -v ./gradlew >/dev/null 2>&1; then
+        run_tool "gradle-detekt" ./gradlew -q detekt || return 1
+    elif { [[ -f "build.gradle" ]] || [[ -f "build.gradle.kts" ]]; } && command -v gradle >/dev/null 2>&1; then
+        run_tool "gradle-detekt" gradle -q detekt || return 1
+    else
+        debug "No Kotlin linter configured (ktlint/detekt) — skipping lint check"
+    fi
+}
+
+kotlin_build_check() {
+    if { [[ -f "build.gradle" ]] || [[ -f "build.gradle.kts" ]]; } && command -v ./gradlew >/dev/null 2>&1; then
+        run_tool "gradle-build" ./gradlew -q compileKotlin compileTestKotlin || return 1
+    elif { [[ -f "build.gradle" ]] || [[ -f "build.gradle.kts" ]]; } && command -v gradle >/dev/null 2>&1; then
+        run_tool "gradle-build" gradle -q compileKotlin compileTestKotlin || return 1
+    else
+        debug "No Kotlin build tool detected; skipping type/build check"
+    fi
+}
+
+kotlin_test() {
+    if { [[ -f "build.gradle" ]] || [[ -f "build.gradle.kts" ]]; } && command -v ./gradlew >/dev/null 2>&1; then
+        run_tool "gradle-test" ./gradlew -q test || return 1
+    elif { [[ -f "build.gradle" ]] || [[ -f "build.gradle.kts" ]]; } && command -v gradle >/dev/null 2>&1; then
+        run_tool "gradle-test" gradle -q test || return 1
+    else
+        debug "No Kotlin test tool detected; skipping tests"
+    fi
+}
+
+kotlin_coverage() {
+    # Assume JaCoCo/Kover configured in project
+    if { [[ -f "build.gradle" ]] || [[ -f "build.gradle.kts" ]]; } && command -v ./gradlew >/dev/null 2>&1; then
+        run_tool "gradle-coverage" ./gradlew -q test jacocoTestReport || return 1
+    elif { [[ -f "build.gradle" ]] || [[ -f "build.gradle.kts" ]]; } && command -v gradle >/dev/null 2>&1; then
+        run_tool "gradle-coverage" gradle -q test jacocoTestReport || return 1
+    else
+        debug "No Kotlin coverage configuration detected; skipping"
+    fi
+}
+
+# --------------------
 # Security helpers
 # --------------------
 
 security_gitleaks() {
     if command -v gitleaks >/dev/null 2>&1; then
-        run_tool "gitleaks" gitleaks detect --no-color --no-banner --redact --verbose
+        # Avoid overly verbose output by default; use --verbose only when VERBOSE=1
+        if [[ $VERBOSE -eq 1 ]]; then
+            run_tool "gitleaks" gitleaks detect --no-color --no-banner --redact --verbose
+        else
+            run_tool "gitleaks" gitleaks detect --no-color --no-banner --redact
+        fi
     else
         debug "gitleaks not found; skipping secrets scan"
     fi
