@@ -202,6 +202,30 @@ python_files_present() {
         $exclude_args | head -1 | grep -q ."
 }
 
+# Utility: detect python source files (excluding common vendor dirs and config excludes)
+python_source_files_present() {
+    local exclude_args
+    exclude_args=$(_build_exclude_args)
+    eval "find . \
+        -type f -name \"*.py\" \
+        -not -path \"*/.venv/*\" \
+        -not -path \"*/.venv-*/*\" \
+        -not -path \"*/.venv*/*\" \
+        -not -path \"*/venv/*\" \
+        -not -path \"*/.tox/*\" \
+        -not -path \"*/.direnv/*\" \
+        -not -path \"*/node_modules/*\" \
+        -not -path \"*/__pycache__/*\" \
+        -not -path \"*/.pytest_cache/*\" \
+        -not -path \"*/.mypy_cache/*\" \
+        -not -path \"*/test_*\" \
+        -not -path \"*/tests/*\" \
+        -not -path \"*/test-projects/*\" \
+        -not -path \"*/test-aiq/*\" \
+        -not -path \"*/test-pure-shell/*\" \
+        $exclude_args | head -1 | grep -q ."
+}
+
 # Utility: detect python test files
 python_tests_present() {
     local exclude_args
@@ -319,8 +343,8 @@ any_tests_present() {
 }
 
 mypy_check() {
-    if ! python_files_present; then
-        debug "No Python files detected; skipping mypy"
+    if ! python_source_files_present; then
+        debug "No Python source files detected; skipping mypy"
         return 0
     fi
     local config_args=""
