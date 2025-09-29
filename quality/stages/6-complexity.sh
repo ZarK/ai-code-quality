@@ -18,7 +18,7 @@ if [[ "$TECHS" == *"python"* ]]; then
 fi
 
 # Lizard-powered complexity for non-Python languages
-if [[ "$TECHS" == *"dotnet"* || "$TECHS" == *"java"* || "$TECHS" == *"js"* || "$TECHS" == *"ts"* || "$TECHS" == *"react"* || "$TECHS" == *"go"* ]]; then
+if [[ "$TECHS" == *"dotnet"* || "$TECHS" == *"java"* || "$TECHS" == *"kotlin"* || "$TECHS" == *"js"* || "$TECHS" == *"ts"* || "$TECHS" == *"react"* || "$TECHS" == *"go"* ]]; then
     debug "Running lizard complexity checks for detected non-Python languages..."
     if ! lizard_complexity_multi; then
         error "lizard complexity check failed"

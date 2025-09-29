@@ -59,9 +59,9 @@ set_current_stage() {
     echo "$new_stage" >"$PHASE_FILE"
 }
 
-get_available_stages() {
-    echo "0 1 2 3 4 5 6 7 8 9"
-}
+
+
+total_time=0
 
 get_stage_name() {
     case "$1" in
@@ -81,21 +81,81 @@ get_stage_name() {
 
 run_stage() {
     local stage=$1
+    local verbose=$2
+    local dry_run=$3
     local stage_name
     stage_name=$(get_stage_name "$stage")
     local stage_script="$QUALITY_DIR/stages/${stage}-${stage_name}.sh"
 
     if [[ -f "$stage_script" ]]; then
-        local _out
-        if _out=$(bash "$stage_script" --quiet 2>/dev/null); then
-            if echo "$_out" | grep -q "AIQ_NO_TESTS=1"; then
-                printf "Stage %s (%s): WARNING (zero tests detected)\n" "$stage" "$stage_name"
+        local start_time end_time duration current_total
+        current_total=$total_time
+        start_time=$(date +%s)
+
+        local stage_args=()
+        if [[ $verbose -eq 1 ]]; then
+            stage_args+=(--verbose)
+        else
+            stage_args+=(--quiet)
+        fi
+        if [[ $dry_run -eq 1 ]]; then
+            stage_args+=(--dry-run)
+        fi
+
+        if [[ $verbose -eq 1 ]]; then
+            # In verbose mode, run directly and let output show
+            if bash "$stage_script" "${stage_args[@]}"; then
+                end_time=$(date +%s)
+                duration=$((end_time - start_time))
+                total_time=$((total_time + duration))
+                local duration_min duration_sec current_min current_sec
+                duration_min=$((duration / 60))
+                duration_sec=$((duration % 60))
+                current_min=$((current_total / 60))
+                current_sec=$((current_total % 60))
+                printf "[%02dm%02ds/%02dm%02ds] Stage %s (%s): PASSED\n" "$current_min" "$current_sec" "$duration_min" "$duration_sec" "$stage" "$stage_name"
             else
-                printf "Stage %s (%s): PASSED\n" "$stage" "$stage_name"
+                end_time=$(date +%s)
+                duration=$((end_time - start_time))
+                total_time=$((total_time + duration))
+                local duration_min duration_sec current_min current_sec
+                duration_min=$((duration / 60))
+                duration_sec=$((duration % 60))
+                current_min=$((current_total / 60))
+                current_sec=$((current_total % 60))
+                printf "[%02dm%02ds/%02dm%02ds] Stage %s (%s): FAILED\n" "$current_min" "$current_sec" "$duration_min" "$duration_sec" "$stage" "$stage_name"
+                return 1
             fi
         else
-            printf "Stage %s (%s): FAILED\n" "$stage" "$stage_name"
-            return 1
+            # Non-verbose: capture output
+            local _out
+            if _out=$(bash "$stage_script" "${stage_args[@]}" 2>/dev/null); then
+                end_time=$(date +%s)
+                duration=$((end_time - start_time))
+                total_time=$((total_time + duration))
+                local duration_min duration_sec current_min current_sec
+                duration_min=$((duration / 60))
+                duration_sec=$((duration % 60))
+                current_min=$((current_total / 60))
+                current_sec=$((current_total % 60))
+
+                if echo "$_out" | grep -q "AIQ_NO_TESTS=1"; then
+                    printf "[%02dm%02ds/%02dm%02ds] Stage %s (%s): WARNING (zero tests detected)\n" "$current_min" "$current_sec" "$duration_min" "$duration_sec" "$stage" "$stage_name"
+                else
+                    printf "[%02dm%02ds/%02dm%02ds] Stage %s (%s): PASSED\n" "$current_min" "$current_sec" "$duration_min" "$duration_sec" "$stage" "$stage_name"
+                fi
+            else
+                end_time=$(date +%s)
+                duration=$((end_time - start_time))
+                total_time=$((total_time + duration))
+                local duration_min duration_sec current_min current_sec
+                duration_min=$((duration / 60))
+                duration_sec=$((duration % 60))
+                current_min=$((current_total / 60))
+                current_sec=$((current_total % 60))
+                printf "[%02dm%02ds/%02dm%02ds] Stage %s (%s): FAILED\n" "$current_min" "$current_sec" "$duration_min" "$duration_sec" "$stage" "$stage_name"
+                return 1
+            fi
         fi
     else
         printf "Unknown stage: %s\n" "$stage" >&2
@@ -104,7 +164,18 @@ run_stage() {
 }
 
 main() {
-    local target_stage="${1:-}"
+    local target_stage=""
+    local verbose=0
+    local dry_run=0
+
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --verbose|-v) verbose=1 ;;
+            --dry-run) dry_run=1 ;;
+            *) target_stage="$1" ;;
+        esac
+        shift
+    done
 
     if [[ -z "$target_stage" ]]; then
         target_stage=$(get_current_stage)
@@ -117,18 +188,20 @@ main() {
     target_stage=$(parse_stage_from_string "$target_stage")
     current_stage=$(parse_stage_from_string "$current_stage")
 
-    local available_stages
-    available_stages=$(get_available_stages)
-
     local failed_stages=()
+    local run_stages=""
 
-    for stage in $available_stages; do
-        if [[ "$stage" -le "$target_stage" ]]; then
-            if ! run_stage "$stage"; then
-                failed_stages+=("$stage")
-            fi
+    for ((stage=0; stage<=target_stage; stage++)); do
+        if ! run_stage "$stage" "$verbose" "$dry_run"; then
+            failed_stages+=("$stage")
         fi
     done
+
+    # Print total execution time
+    local total_min total_sec
+    total_min=$((total_time / 60))
+    total_sec=$((total_time % 60))
+    printf "\nTotal execution time: %02dm%02ds\n" "$total_min" "$total_sec"
 
     if [[ ${#failed_stages[@]} -eq 0 ]]; then
         if [[ "$current_stage" -lt "$target_stage" ]]; then

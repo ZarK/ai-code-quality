@@ -43,9 +43,13 @@ else
         DETECTED_TECHS="${DETECTED_TECHS}dotnet,"
     fi
 
-    # Java detection (Maven/Gradle)
+    # Java/Kotlin detection (Maven/Gradle)
     if find . -maxdepth 3 \( -name "pom.xml" -o -name "build.gradle" -o -name "build.gradle.kts" \) -not -path "./node_modules/*" -type f | head -1 | grep -q .; then
         DETECTED_TECHS="${DETECTED_TECHS}java,"
+        # Check for Kotlin files or Kotlin plugin in Gradle
+        if find . -maxdepth 4 -name "*.kt" -not -path "./node_modules/*" -type f | head -1 | grep -q . || grep -q "kotlin" build.gradle* 2>/dev/null; then
+            DETECTED_TECHS="${DETECTED_TECHS}kotlin,"
+        fi
     fi
 
     # HCL / Terraform detection

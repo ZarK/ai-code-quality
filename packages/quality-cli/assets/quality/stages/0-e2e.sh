@@ -3,7 +3,6 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 QUALITY_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-PROJECT_ROOT="$(cd "$QUALITY_DIR/.." && pwd)"
 
 VERBOSE=false
 if [[ "${1:-}" == "--verbose" ]]; then
@@ -23,19 +22,19 @@ if [[ "${SKIP_E2E:-}" == "1" || "${SKIP_E2E:-}" == "true" ]]; then
 fi
 
 detect_e2e_framework() {
-    if [[ -f "$PROJECT_ROOT/package.json" ]]; then
-        if grep -q '"@playwright/test"' "$PROJECT_ROOT/package.json" 2>/dev/null; then
+    if [[ -f "package.json" ]]; then
+        if grep -q '"@playwright/test"' "package.json" 2>/dev/null; then
             echo "playwright"
             return
         fi
     fi
 
-    if [[ -f "$PROJECT_ROOT/pyproject.toml" ]] || [[ -f "$PROJECT_ROOT/requirements.txt" ]]; then
-        if grep -q "playwright" "$PROJECT_ROOT/pyproject.toml" "$PROJECT_ROOT/requirements.txt" 2>/dev/null; then
+    if [[ -f "pyproject.toml" ]] || [[ -f "requirements.txt" ]]; then
+        if grep -q "playwright" "pyproject.toml" "requirements.txt" 2>/dev/null; then
             echo "playwright-python"
             return
         fi
-        if grep -q "pytest" "$PROJECT_ROOT/pyproject.toml" "$PROJECT_ROOT/requirements.txt" 2>/dev/null; then
+        if grep -q "pytest" "pyproject.toml" "requirements.txt" 2>/dev/null; then
             echo "pytest"
             return
         fi
@@ -48,9 +47,12 @@ find_e2e_directory() {
     local default_paths=("tests/e2e" "e2e" "test/e2e")
 
     for path in "${default_paths[@]}"; do
-        if [[ -d "$PROJECT_ROOT/$path" ]]; then
-            echo "$PROJECT_ROOT/$path"
-            return
+        if [[ -d "$path" ]]; then
+            # Check if there are test files in this directory
+            if find "$path" -type f \( -name "test_*.py" -o -name "*.test.*" -o -name "*.spec.*" -o -name "test_*.js" -o -name "*.test.js" -o -name "*.spec.js" \) | head -1 | grep -q .; then
+                echo "$path"
+                return
+            fi
         fi
     done
 
@@ -71,10 +73,19 @@ run_e2e_tests() {
         return 0
     fi
 
+    # Fallback framework detection if none detected but conftest.py exists
+    if [[ "$framework" == "none" ]]; then
+        if [[ -f "$e2e_dir/conftest.py" ]]; then
+            framework="pytest"
+            log "Detected pytest via conftest.py"
+        elif find "$e2e_dir" -name "test_*.py" | head -1 | grep -q .; then
+            framework="pytest"
+            log "Detected pytest via test files"
+        fi
+    fi
+
     log "Found E2E directory: $e2e_dir"
     log "Detected framework: $framework"
-
-    cd "$PROJECT_ROOT"
 
     case "$framework" in
     playwright)

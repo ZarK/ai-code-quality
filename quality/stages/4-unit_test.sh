@@ -9,25 +9,29 @@ parse_flags "$@"
 TECHS=$(detect_tech)
 FAILED=0
 
-# If no tests are present across detected technologies, succeed with sentinel
-if ! any_tests_present; then
-    echo "AIQ_NO_TESTS=1"
-    exit 0
-fi
-
-if [[ "$TECHS" == *"python"* ]]; then
-    debug "Running pytest unit tests..."
-    if ! pytest_unit; then
-        error "pytest unit tests failed"
+if [[ "$TECHS" == *"js"* || "$TECHS" == *"ts"* || "$TECHS" == *"react"* ]]; then
+    if ! js_test_unit; then
+        error "JS/TS unit tests failed"
         FAILED=1
     fi
 fi
 
-if [[ "$TECHS" == *"js"* || "$TECHS" == *"ts"* || "$TECHS" == *"react"* ]]; then
-    debug "Running vitest unit tests..."
-    if ! vitest_unit; then
-        error "vitest unit tests failed"
-        FAILED=1
+if [[ "$TECHS" == *"python"* ]]; then
+    TEST_FRAMEWORK=$(detect_python_test_framework)
+    if [[ "$TEST_FRAMEWORK" == "pytest" ]]; then
+        debug "Running pytest unit tests..."
+        if ! pytest_unit; then
+            error "pytest unit tests failed"
+            FAILED=1
+        fi
+    elif [[ "$TEST_FRAMEWORK" == "unittest" ]]; then
+        debug "Running unittest unit tests..."
+        if ! unittest_unit; then
+            error "unittest unit tests failed"
+            FAILED=1
+        fi
+    else
+        debug "No Python test framework detected"
     fi
 fi
 
@@ -43,6 +47,14 @@ if [[ "$TECHS" == *"java"* ]]; then
     debug "Running Java unit tests..."
     if ! java_test; then
         error "Java unit tests failed"
+        FAILED=1
+    fi
+fi
+
+if [[ "$TECHS" == *"kotlin"* ]]; then
+    debug "Running Kotlin unit tests..."
+    if ! kotlin_test; then
+        error "Kotlin unit tests failed"
         FAILED=1
     fi
 fi

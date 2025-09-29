@@ -103,9 +103,9 @@ install_node_tools() {
         else
             printf "package.json not found, installing individual tools...\n"
             if [[ $DRY_RUN -eq 1 ]]; then
-                echo "[DRY-RUN] bun add -g @biomejs/biome eslint prettier typescript htmlhint stylelint"
+                echo "[DRY-RUN] bun add -g @biomejs/biome typescript"
             else
-                bun add -g @biomejs/biome eslint prettier typescript htmlhint stylelint
+                bun add -g @biomejs/biome typescript
             fi
         fi
 

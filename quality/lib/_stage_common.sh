@@ -176,6 +176,51 @@ js_tests_present() {
         -print -quit | grep -q .
 }
 
+detect_js_test_runner() {
+    # Check package.json for test script and dependencies
+    if [[ -f "package.json" ]]; then
+        # Check test script in package.json first (most explicit)
+        if grep -q '"test":.*jest' package.json 2>/dev/null; then
+            echo "jest"
+            return 0
+        fi
+        if grep -q '"test":.*vitest' package.json 2>/dev/null; then
+            echo "vitest"
+            return 0
+        fi
+        if grep -q '"test":.*mocha' package.json 2>/dev/null; then
+            echo "mocha"
+            return 0
+        fi
+        if grep -q '"test":.*jasmine' package.json 2>/dev/null; then
+            echo "jasmine"
+            return 0
+        fi
+        # Check if jest is in dependencies or devDependencies
+        if grep -q '"jest"' package.json 2>/dev/null; then
+            echo "jest"
+            return 0
+        fi
+        # Check if vitest is in dependencies or devDependencies
+        if grep -q '"vitest"' package.json 2>/dev/null; then
+            echo "vitest"
+            return 0
+        fi
+        # Check if mocha is in dependencies or devDependencies
+        if grep -q '"mocha"' package.json 2>/dev/null; then
+            echo "mocha"
+            return 0
+        fi
+        # Check if jasmine is in dependencies or devDependencies
+        if grep -q '"jasmine"' package.json 2>/dev/null; then
+            echo "jasmine"
+            return 0
+        fi
+    fi
+    # Default to jest if no clear detection (most common)
+    echo "jest"
+}
+
 # Utility: detect .NET test projects/files
 _dotnet_csproj_is_test() {
     local file="$1"
@@ -222,11 +267,51 @@ mypy_check() {
         debug "No Python files detected; skipping mypy"
         return 0
     fi
-    if command -v mypy >/dev/null 2>&1; then
-        run_tool "mypy" mypy . --config-file "$QUALITY_DIR/configs/python/mypy.ini"
+    local config_args=""
+    # Check for local mypy config files
+    if [[ -f "mypy.ini" || -f ".mypy.ini" || -f "pyproject.toml" || -f "setup.cfg" ]]; then
+        debug "Using local mypy config"
     else
-        run_tool "mypy" .venv/bin/mypy . --config-file "$QUALITY_DIR/configs/python/mypy.ini"
+        debug "No local mypy config found, using embedded config"
+        config_args="--config-file $QUALITY_DIR/configs/python/mypy.ini"
     fi
+    if command -v mypy >/dev/null 2>&1; then
+        run_tool "mypy" mypy . $config_args
+    else
+        run_tool "mypy" .venv/bin/mypy . $config_args
+    fi
+}
+
+detect_python_test_framework() {
+    # Check if pytest is configured or available
+    if command -v pytest >/dev/null 2>&1 || [[ -f ".venv/bin/pytest" ]]; then
+        # Check for pytest configuration files
+        if [[ -f "pytest.ini" || -f "pyproject.toml" || -f "tox.ini" || -f "setup.cfg" ]]; then
+            if [[ -f "pyproject.toml" ]] && grep -q "\[tool:pytest\]" pyproject.toml 2>/dev/null; then
+                echo "pytest"
+                return 0
+            fi
+            if [[ -f "setup.cfg" ]] && grep -q "\[tool:pytest\]" setup.cfg 2>/dev/null; then
+                echo "pytest"
+                return 0
+            fi
+            if [[ -f "pytest.ini" || -f "tox.ini" ]]; then
+                echo "pytest"
+                return 0
+            fi
+        fi
+        # If pytest is available but no config, still prefer it for its features
+        echo "pytest"
+        return 0
+    fi
+
+    # Fallback to unittest if test files exist
+    if python_tests_present; then
+        echo "unittest"
+        return 0
+    fi
+
+    echo "none"
 }
 
 pytest_unit() {
@@ -234,10 +319,40 @@ pytest_unit() {
         debug "No Python tests detected; skipping pytest"
         return 0
     fi
+
+    # Check if pytest-xdist is available for parallel execution
+    local pytest_cmd=""
+    local pytest_args=""
+
     if command -v pytest >/dev/null 2>&1; then
-        run_tool "pytest" pytest
+        pytest_cmd="pytest"
     else
-        run_tool "pytest" .venv/bin/pytest
+        pytest_cmd=".venv/bin/pytest"
+    fi
+
+    # Try to import pytest_xdist to check if parallel execution is available
+    if python3 -c "import pytest_xdist" 2>/dev/null; then
+        pytest_args="-n auto"
+    fi
+
+    # Add timeout to prevent hanging tests (300 seconds = 5 minutes)
+    if command -v gtimeout >/dev/null 2>&1; then
+        run_tool "pytest" gtimeout 300 $pytest_cmd $pytest_args
+    else
+        run_tool "pytest" $pytest_cmd $pytest_args
+    fi
+}
+
+unittest_unit() {
+    if ! python_tests_present; then
+        debug "No Python tests detected; skipping unittest"
+        return 0
+    fi
+    # Use python3 if available, otherwise python
+    if command -v python3 >/dev/null 2>&1; then
+        run_tool "unittest" python3 -m unittest discover -v
+    else
+        run_tool "unittest" python -m unittest discover -v
     fi
 }
 
@@ -247,9 +362,35 @@ pytest_coverage() {
         return 0
     fi
     if command -v pytest >/dev/null 2>&1; then
-        run_tool "pytest" pytest --cov=. --cov-report=term-missing
+        if command -v gtimeout >/dev/null 2>&1; then
+            run_tool "pytest" gtimeout 300 pytest --cov=. --cov-report=term-missing
+        else
+            run_tool "pytest" pytest --cov=. --cov-report=term-missing
+        fi
     else
-        run_tool "pytest" .venv/bin/pytest --cov=. --cov-report=term-missing
+        if command -v gtimeout >/dev/null 2>&1; then
+            run_tool "pytest" gtimeout 300 .venv/bin/pytest --cov=. --cov-report=term-missing
+        else
+            run_tool "pytest" .venv/bin/pytest --cov=. --cov-report=term-missing
+        fi
+    fi
+}
+
+unittest_coverage() {
+    if ! python_tests_present; then
+        debug "No Python tests detected; skipping unittest coverage"
+        return 0
+    fi
+    # Use coverage.py with unittest if available
+    if command -v coverage >/dev/null 2>&1; then
+        run_tool "coverage" coverage run --source=. -m unittest discover
+        run_tool "coverage" coverage report
+    elif [[ -f ".venv/bin/coverage" ]]; then
+        run_tool "coverage" .venv/bin/coverage run --source=. -m unittest discover
+        run_tool "coverage" .venv/bin/coverage report
+    else
+        debug "coverage.py not available; running unittest without coverage"
+        unittest_unit
     fi
 }
 
@@ -478,38 +619,56 @@ PY
 }
 
 biome_check() {
-    local files
-    files=$(_changed_files_by_ext '\.(js|jsx|ts|tsx)$') || files=""
-    if [[ -n "$files" ]]; then
-        if command -v bunx >/dev/null 2>&1; then
-            run_tool "biome" bunx biome check --reporter=summary "$files"
-        else
-            run_tool "biome" npx @biomejs/biome check --reporter=summary "$files"
-        fi
-        return $?
+    # Only run biome if relevant files exist (excluding generated/cache files)
+    if ! find . -type f \( -name "*.js" -o -name "*.jsx" -o -name "*.ts" -o -name "*.tsx" -o -name "*.json" -o -name "*.html" -o -name "*.css" -o -name "*.graphql" -o -name "*.gql" \) \
+        -not -path "./node_modules/*" \
+        -not -path "./.git/*" \
+        -not -path "./.mypy_cache/*" \
+        -not -path "./__pycache__/*" \
+        -not -path "./.pytest_cache/*" \
+        -not -path "./.ruff_cache/*" \
+        -not -path "./dist/*" \
+        -not -path "./build/*" \
+        -not -path "./target/*" \
+        -not -path "./.next/*" \
+        -not -path "./.nuxt/*" \
+        -not -path "./.vuepress/*" \
+        -not -path "./.cache/*" \
+        -not -path "./.parcel-cache/*" \
+        -not -path "./.nyc_output/*" \
+        -not -path "./coverage/*" \
+        | head -1 | grep -q .; then
+        debug "No JS/TS/JSON/HTML/CSS/GraphQL files found; skipping biome"
+        return 0
     fi
     if command -v bunx >/dev/null 2>&1; then
-        run_tool "biome" bunx biome check --reporter=summary .
+        run_tool "biome" bunx @biomejs/biome check --linter-enabled=true --formatter-enabled=false --reporter=summary .
     else
-        run_tool "biome" npx @biomejs/biome check --reporter=summary .
+        run_tool "biome" npx @biomejs/biome check --linter-enabled=true --formatter-enabled=false --reporter=summary .
     fi
 }
 
 biome_format() {
+    # Only run biome format if relevant files exist
+    if ! find . -type f \( -name "*.js" -o -name "*.jsx" -o -name "*.ts" -o -name "*.tsx" -o -name "*.json" -o -name "*.html" -o -name "*.css" -o -name "*.graphql" -o -name "*.gql" \) -not -path "./node_modules/*" -not -path "./.git/*" -not -path "./.mypy_cache/*" -not -path "./__pycache__/*" | head -1 | grep -q .; then
+        debug "No JS/TS/JSON/HTML/CSS/GraphQL files found; skipping biome format"
+        return 0
+    fi
     local files
-    files=$(_changed_files_by_ext '\.(js|jsx|ts|tsx)$') || files=""
+    files=$(_changed_files_by_ext '\.(js|jsx|ts|tsx|json|html|css|graphql|gql)$') || files=""
     if [[ -n "$files" ]]; then
         if command -v bunx >/dev/null 2>&1; then
-            run_tool "biome" bunx @biomejs/biome check --formatter-enabled=true --linter-enabled=false --organize-imports-enabled=false "$files"
+            run_tool "biome" bunx @biomejs/biome check --formatter-enabled=true --linter-enabled=false "$files"
         else
-            run_tool "biome" npx @biomejs/biome check --formatter-enabled=true --linter-enabled=false --organize-imports-enabled=false "$files"
+            run_tool "biome" npx @biomejs/biome check --formatter-enabled=true --linter-enabled=false "$files"
         fi
-        return $?
-    fi
-    if command -v bunx >/dev/null 2>&1; then
-        run_tool "biome" bunx @biomejs/biome check --formatter-enabled=true --linter-enabled=false --organize-imports-enabled=false .
     else
-        run_tool "biome" npx @biomejs/biome check --formatter-enabled=true --linter-enabled=false --organize-imports-enabled=false .
+        # Full check if not in diff-only mode
+        if command -v bunx >/dev/null 2>&1; then
+            run_tool "biome" bunx @biomejs/biome check --formatter-enabled=true --linter-enabled=false .
+        else
+            run_tool "biome" npx @biomejs/biome check --formatter-enabled=true --linter-enabled=false .
+        fi
     fi
 }
 
@@ -523,29 +682,91 @@ tsc_check() {
     fi
 }
 
-vitest_unit() {
+js_test_unit() {
     # Skip if no JS/TS tests present
     if ! js_tests_present; then
-        debug "No JS/TS tests detected; skipping vitest"
+        debug "No JS/TS tests detected; skipping JS tests"
         return 0
     fi
-    if command -v bunx >/dev/null 2>&1; then
-        run_tool "vitest" bunx vitest run
+
+    local runner
+    runner=$(detect_js_test_runner)
+
+    if [[ "$runner" == "vitest" ]]; then
+        debug "Running vitest unit tests..."
+        if [[ -x "./node_modules/.bin/vitest" ]]; then
+            run_tool "vitest" ./node_modules/.bin/vitest run --reporter=verbose
+        elif command -v bunx >/dev/null 2>&1; then
+            run_tool "vitest" bunx vitest run --reporter=verbose
+        else
+            run_tool "vitest" npx vitest run --reporter=verbose
+        fi
+    elif [[ "$runner" == "jest" ]]; then
+        debug "Running jest unit tests..."
+        if [[ -x "./node_modules/.bin/jest" ]]; then
+            run_tool "jest" ./node_modules/.bin/jest --maxWorkers=50%
+        elif command -v bunx >/dev/null 2>&1; then
+            run_tool "jest" bunx jest --maxWorkers=50%
+        else
+            run_tool "jest" npx jest --maxWorkers=50%
+        fi
+    elif [[ "$runner" == "mocha" ]]; then
+        debug "Running mocha unit tests..."
+        if [[ -x "./node_modules/.bin/mocha" ]]; then
+            run_tool "mocha" ./node_modules/.bin/mocha --parallel
+        elif command -v bunx >/dev/null 2>&1; then
+            run_tool "mocha" bunx mocha --parallel
+        else
+            run_tool "mocha" npx mocha --parallel
+        fi
+    elif [[ "$runner" == "jasmine" ]]; then
+        debug "Running jasmine unit tests..."
+        if [[ -x "./node_modules/.bin/jasmine" ]]; then
+            run_tool "jasmine" ./node_modules/.bin/jasmine
+        elif command -v bunx >/dev/null 2>&1; then
+            run_tool "jasmine" bunx jasmine
+        else
+            run_tool "jasmine" npx jasmine
+        fi
     else
-        run_tool "vitest" npx vitest run
+        debug "Unknown test runner: $runner; skipping JS tests"
+        return 0
     fi
 }
 
-vitest_coverage() {
+js_test_coverage() {
     # Skip if no JS/TS tests present
     if ! js_tests_present; then
-        debug "No JS/TS tests detected; skipping vitest coverage"
+        debug "No JS/TS tests detected; skipping JS test coverage"
         return 0
     fi
-    if command -v bunx >/dev/null 2>&1; then
-        run_tool "vitest" bunx vitest run --coverage
+
+    local runner
+    runner=$(detect_js_test_runner)
+
+    if [[ "$runner" == "vitest" ]]; then
+        debug "Running vitest coverage..."
+        if command -v bunx >/dev/null 2>&1; then
+            run_tool "vitest" bunx vitest run --coverage
+        else
+            run_tool "vitest" npx vitest run --coverage
+        fi
+    elif [[ "$runner" == "jest" ]]; then
+        debug "Running jest coverage..."
+        if command -v bunx >/dev/null 2>&1; then
+            run_tool "jest" bunx jest --coverage
+        else
+            run_tool "jest" npx jest --coverage
+        fi
+    elif [[ "$runner" == "mocha" ]]; then
+        debug "Mocha coverage not yet supported; skipping"
+        return 0
+    elif [[ "$runner" == "jasmine" ]]; then
+        debug "Jasmine coverage not yet supported; skipping"
+        return 0
     else
-        run_tool "vitest" npx vitest run --coverage
+        debug "Unknown test runner: $runner; skipping JS test coverage"
+        return 0
     fi
 }
 
@@ -669,6 +890,9 @@ _lizard_lang_flags() {
     if [[ "$techs" == *"java"* ]]; then
         flags+=("-l" "java")
     fi
+    if [[ "$techs" == *"kotlin"* ]]; then
+        flags+=("-l" "kotlin")
+    fi
     if [[ "$techs" == *"js"* || "$techs" == *"react"* ]]; then
         flags+=("-l" "javascript")
     fi
@@ -681,8 +905,8 @@ _lizard_lang_flags() {
     echo "${flags[@]}"
 }
 
-# Common runner to emit JSON for selected languages; stdout = JSON
-_lizard_run_json() {
+# Common runner to emit CSV for selected languages; stdout = CSV
+_lizard_run_csv() {
     local techs="$1"
     shift
     local lang_flags
@@ -692,7 +916,7 @@ _lizard_run_json() {
         return 0
     fi
 
-    local args=("-j")
+    local args=("--csv")
     # Excludes
     for ex in "${LIZARD_EXCLUDES[@]}"; do
         args+=("-x" "$ex")
@@ -711,7 +935,7 @@ _lizard_run_json() {
         args+=(".")
     fi
 
-    debug "Running Lizard JSON with args: ${args[*]}"
+    debug "Running Lizard with args: ${args[*]}"
     _lizard_uvx "${args[@]}"
 }
 
@@ -723,51 +947,58 @@ lizard_sloc_multi() {
     else
         techs=$(detect_tech)
     fi
-    local json
-    if ! json=$(_lizard_run_json "$techs"); then
+    local csv
+    if ! csv=$(_lizard_run_csv "$techs"); then
         return 1
     fi
-    if [[ -z "$json" ]]; then
-        # Nothing to check
+    if [[ -z "$csv" ]]; then
         return 0
     fi
-
     if [[ $VERBOSE -eq 1 ]]; then
-        echo "$json" | python3 -c '
-import json, sys, collections
-limit = int(sys.argv[1])
-data = json.load(sys.stdin)
-by_file = collections.defaultdict(int)
-for item in data:
-    fn = item.get("filename") or item.get("path")
-    nloc = item.get("nloc") or 0
-    if fn:
-        by_file[fn] += int(nloc)
-failed = []
-for fn, total in sorted(by_file.items()):
-    print(f"{fn}: total NLOC ~ {total}")
-    if total >= limit:
-        failed.append((fn, total))
-if failed:
-    print("\nFiles exceeding SLOC limit:", file=sys.stderr)
-    for fn, total in failed:
-        print(f"{fn}: {total} >= {limit}", file=sys.stderr)
+        echo "$csv" | python3 -c '
+import csv, sys
+sloc_limit = int(sys.argv[1])
+reader = csv.reader(sys.stdin)
+file_sloc = {}
+violations = []
+for row in reader:
+    if len(row) < 7:
+        continue
+    try:
+        nloc = int(row[0])
+        filename = row[6]
+        file_sloc[filename] = file_sloc.get(filename, 0) + nloc
+    except (ValueError, IndexError):
+        continue
+
+for filename, total_sloc in file_sloc.items():
+    if total_sloc >= sloc_limit:
+        violations.append((filename, total_sloc))
+
+for filename, sloc in violations:
+    print(f"{filename}: {sloc} lines >= {sloc_limit}")
+if violations:
     sys.exit(1)
 ' "$LIZARD_SLOC_LIMIT"
     else
-        # Non-verbose: compute violations but do not print details
-        echo "$json" | python3 -c '
-import json, sys, collections
-limit = int(sys.argv[1])
-data = json.load(sys.stdin)
-by_file = collections.defaultdict(int)
-for item in data:
-    fn = item.get("filename") or item.get("path")
-    nloc = item.get("nloc") or 0
-    if fn:
-        by_file[fn] += int(nloc)
-if any(total >= limit for total in by_file.values()):
-    sys.exit(1)
+        echo "$csv" | python3 -c '
+import csv, sys
+sloc_limit = int(sys.argv[1])
+reader = csv.reader(sys.stdin)
+file_sloc = {}
+for row in reader:
+    if len(row) < 7:
+        continue
+    try:
+        nloc = int(row[0])
+        filename = row[6]
+        file_sloc[filename] = file_sloc.get(filename, 0) + nloc
+    except (ValueError, IndexError):
+        continue
+
+for filename, total_sloc in file_sloc.items():
+    if total_sloc >= sloc_limit:
+        sys.exit(1)
 ' "$LIZARD_SLOC_LIMIT" >/dev/null
     fi
 }
@@ -780,52 +1011,56 @@ lizard_complexity_multi() {
     else
         techs=$(detect_tech)
     fi
-    local json
-    if ! json=$(_lizard_run_json "$techs"); then
+    local csv
+    if ! csv=$(_lizard_run_csv "$techs"); then
         return 1
     fi
-    if [[ -z "$json" ]]; then
+    if [[ -z "$csv" ]]; then
         return 0
     fi
     if [[ $VERBOSE -eq 1 ]]; then
-        echo "$json" | python3 -c '
-import json, sys
+        echo "$csv" | python3 -c '
+import csv, sys
 ccn_limit = int(sys.argv[1])
-data = json.load(sys.stdin)
-viol = []
-for i in data:
-    ccn = i.get("cyclomatic_complexity") or i.get("ccn")
-    if ccn is None:
+reader = csv.reader(sys.stdin)
+violations = []
+for row in reader:
+    if len(row) < 11:
         continue
     try:
-        ccn = int(ccn)
-    except Exception:
+        ccn = int(row[1])
+        filename = row[6]
+        function_name = row[7]
+        start_line = int(row[9])
+        if ccn > ccn_limit:
+            violations.append((filename, start_line, function_name, ccn))
+    except (ValueError, IndexError):
         continue
-    if ccn > ccn_limit:
-        viol.append(i)
-for v in viol:
-    print(f"{v.get(\"filename\")}:{v.get(\"start_line\")} {v.get(\"name\")} CCN={v.get(\"cyclomatic_complexity\") or v.get(\"ccn\")} \u003e {ccn_limit}")
-if viol:
+
+for filename, start_line, function_name, ccn in violations:
+    print(f"{filename}:{start_line} {function_name} CCN={ccn} > {ccn_limit}")
+if violations:
     sys.exit(1)
 ' "$LIZARD_CCN_LIMIT"
     else
-        echo "$json" | python3 -c '
-import json, sys
+        echo "$csv" | python3 -c '
+import csv, sys
 ccn_limit = int(sys.argv[1])
-data = json.load(sys.stdin)
-for i in data:
-    ccn = i.get("cyclomatic_complexity") or i.get("ccn")
-    if ccn is None:
+reader = csv.reader(sys.stdin)
+for row in reader:
+    if len(row) < 11:
         continue
     try:
-        ccn = int(ccn)
-    except Exception:
+        ccn = int(row[1])
+        if ccn > ccn_limit:
+            sys.exit(1)
+    except (ValueError, IndexError):
         continue
-    if ccn > ccn_limit:
-        sys.exit(1)
 ' "$LIZARD_CCN_LIMIT" >/dev/null
     fi
 }
+
+
 
 # Stage 7: Maintainability proxy (stricter CCN + function NLOC + parameters)
 lizard_maintainability_multi() {
@@ -835,72 +1070,102 @@ lizard_maintainability_multi() {
     else
         techs=$(detect_tech)
     fi
-    local json
-    if ! json=$(_lizard_run_json "$techs"); then
+    local csv
+    if ! csv=$(_lizard_run_csv "$techs"); then
         return 1
     fi
-    if [[ -z "$json" ]]; then
+    if [[ -z "$csv" ]]; then
         return 0
     fi
     if [[ $VERBOSE -eq 1 ]]; then
-        echo "$json" | python3 -c '
-import json, sys
+        echo "$csv" | python3 -c '
+import csv, sys
 ccn_limit = int(sys.argv[1])
 fn_nloc_limit = int(sys.argv[2])
 param_limit = int(sys.argv[3])
-data = json.load(sys.stdin)
-viol = []
-for i in data:
-    ccn = i.get("cyclomatic_complexity") or i.get("ccn") or 0
-    nloc = i.get("nloc") or 0
-    params = i.get("parameters") or i.get("parameter_count") or 0
-    try:
-        ccn = int(ccn)
-        nloc = int(nloc)
-        params = int(params)
-    except Exception:
+reader = csv.reader(sys.stdin)
+violations = []
+for row in reader:
+    if len(row) < 11:
         continue
-    if ccn > ccn_limit or nloc > fn_nloc_limit or params > param_limit:
-        viol.append(i)
-for v in viol:
-    print(f"{v.get(\"filename\")}:{v.get(\"start_line\")} {v.get(\"name\")} CCN={v.get(\"cyclomatic_complexity\") or v.get(\"ccn\")}, NLOC={v.get(\"nloc\")}, Params={v.get(\"parameters\") or v.get(\"parameter_count\")}")
-if viol:
+    try:
+        ccn = int(row[1])
+        nloc = int(row[0])
+        params = int(row[3])
+        filename = row[6]
+        function_name = row[7]
+        start_line = int(row[9])
+        if ccn > ccn_limit or nloc > fn_nloc_limit or params > param_limit:
+            violations.append((filename, start_line, function_name, ccn, nloc, params))
+    except (ValueError, IndexError):
+        continue
+
+for filename, start_line, function_name, ccn, nloc, params in violations:
+    print(f"{filename}:{start_line} {function_name} CCN={ccn}, NLOC={nloc}, Params={params}")
+if violations:
     sys.exit(1)
 ' "$LIZARD_CCN_STRICT" "$LIZARD_FN_NLOC_LIMIT" "$LIZARD_PARAM_LIMIT"
     else
-        echo "$json" | python3 -c '
-import json, sys
+        echo "$csv" | python3 -c '
+import csv, sys
 ccn_limit = int(sys.argv[1])
 fn_nloc_limit = int(sys.argv[2])
 param_limit = int(sys.argv[3])
-data = json.load(sys.stdin)
-for i in data:
-    ccn = i.get("cyclomatic_complexity") or i.get("ccn") or 0
-    nloc = i.get("nloc") or 0
-    params = i.get("parameters") or i.get("parameter_count") or 0
-    try:
-        ccn = int(ccn)
-        nloc = int(nloc)
-        params = int(params)
-    except Exception:
+reader = csv.reader(sys.stdin)
+for row in reader:
+    if len(row) < 11:
         continue
-    if ccn > ccn_limit or nloc > fn_nloc_limit or params > param_limit:
-        sys.exit(1)
+    try:
+        ccn = int(row[1])
+        nloc = int(row[0])
+        params = int(row[3])
+        if ccn > ccn_limit or nloc > fn_nloc_limit or params > param_limit:
+            sys.exit(1)
+    except (ValueError, IndexError):
+        continue
 ' "$LIZARD_CCN_STRICT" "$LIZARD_FN_NLOC_LIMIT" "$LIZARD_PARAM_LIMIT" >/dev/null
+    fi
+}
+
+
+
+find_dotnet_project_dir() {
+    # Find the directory containing a .csproj or .sln file
+    local proj_dir
+    proj_dir=$(find . -maxdepth 3 -type f \( -name "*.csproj" -o -name "*.sln" \) | head -1 | xargs dirname 2>/dev/null || true)
+    if [[ -n "$proj_dir" && -d "$proj_dir" ]]; then
+        echo "$proj_dir"
+    else
+        echo "."
     fi
 }
 
 dotnet_format_check() {
     if command -v dotnet >/dev/null 2>&1; then
-        run_tool "dotnet-format" dotnet format --verify-no-changes
+        local proj_dir
+        proj_dir=$(find_dotnet_project_dir)
+        run_tool "dotnet-format" dotnet format "$proj_dir" --verify-no-changes
     else
         debug "dotnet not found; skipping dotnet format"
     fi
 }
 
+dotnet_lint_check() {
+    if command -v dotnet >/dev/null 2>&1; then
+        # Use dotnet format to catch both formatting and style issues
+        local proj_dir
+        proj_dir=$(find_dotnet_project_dir)
+        run_tool "dotnet-lint" dotnet format "$proj_dir" --verify-no-changes --severity warn
+    else
+        debug "dotnet not found; skipping dotnet lint"
+    fi
+}
+
 dotnet_build_check() {
     if command -v dotnet >/dev/null 2>&1; then
-        run_tool "dotnet-build" dotnet build -warnaserror
+        local proj_dir
+        proj_dir=$(find_dotnet_project_dir)
+        run_tool "dotnet-build" dotnet build -warnaserror "$proj_dir"
     else
         debug "dotnet not found; skipping dotnet build"
     fi
@@ -908,7 +1173,9 @@ dotnet_build_check() {
 
 dotnet_test() {
     if command -v dotnet >/dev/null 2>&1; then
-        run_tool "dotnet-test" dotnet test --nologo
+        local proj_dir
+        proj_dir=$(find_dotnet_project_dir)
+        run_tool "dotnet-test" dotnet test --nologo "$proj_dir"
     else
         debug "dotnet not found; skipping dotnet test"
     fi
@@ -916,12 +1183,14 @@ dotnet_test() {
 
 dotnet_coverage() {
     if command -v dotnet >/dev/null 2>&1; then
+        local proj_dir
+        proj_dir=$(find_dotnet_project_dir)
         # Attempt coverlet via data collector if configured
-        if dotnet test -l "console;verbosity=minimal" -p:CollectCoverage=true -p:CoverletOutputFormat=cobertura >/dev/null 2>&1; then
-            run_tool "dotnet-coverage" dotnet test -p:CollectCoverage=true -p:CoverletOutputFormat=cobertura
+        if dotnet test "$proj_dir" -l "console;verbosity=minimal" -p:CollectCoverage=true -p:CoverletOutputFormat=cobertura >/dev/null 2>&1; then
+            run_tool "dotnet-coverage" dotnet test "$proj_dir" -p:CollectCoverage=true -p:CoverletOutputFormat=cobertura
         else
             debug "Coverlet not configured; running dotnet test without coverage"
-            run_tool "dotnet-test" dotnet test --nologo
+            run_tool "dotnet-test" dotnet test --nologo "$proj_dir"
         fi
     else
         debug "dotnet not found; skipping dotnet coverage"
@@ -1016,6 +1285,69 @@ java_coverage() {
         run_tool "gradle-jacoco" "$(java_gradle_cmd)" -q test jacocoTestReport || return 1
     else
         debug "No Java coverage configuration detected; skipping"
+    fi
+}
+
+# --------------------
+# Kotlin helpers
+# --------------------
+
+kotlin_format_check() {
+    # Prefer ktlint if available
+    if command -v ktlint >/dev/null 2>&1; then
+        run_tool "ktlint" ktlint --format --log-level=error "**/*.kt" || return 1
+    elif { [[ -f "build.gradle" ]] || [[ -f "build.gradle.kts" ]]; } && command -v ./gradlew >/dev/null 2>&1; then
+        run_tool "gradle-spotless" ./gradlew -q spotlessCheck || return 1
+    elif { [[ -f "build.gradle" ]] || [[ -f "build.gradle.kts" ]]; } && command -v gradle >/dev/null 2>&1; then
+        run_tool "gradle-spotless" gradle -q spotlessCheck || return 1
+    else
+        debug "No Kotlin formatter configured (ktlint/Spotless) — skipping format check"
+    fi
+}
+
+kotlin_lint_check() {
+    # Prefer ktlint if available
+    if command -v ktlint >/dev/null 2>&1; then
+        run_tool "ktlint" ktlint --log-level=error "**/*.kt" || return 1
+    elif command -v detekt >/dev/null 2>&1; then
+        run_tool "detekt" detekt --config detekt-config.yml 2>/dev/null || detekt || return 1
+    elif { [[ -f "build.gradle" ]] || [[ -f "build.gradle.kts" ]]; } && command -v ./gradlew >/dev/null 2>&1; then
+        run_tool "gradle-detekt" ./gradlew -q detekt || return 1
+    elif { [[ -f "build.gradle" ]] || [[ -f "build.gradle.kts" ]]; } && command -v gradle >/dev/null 2>&1; then
+        run_tool "gradle-detekt" gradle -q detekt || return 1
+    else
+        debug "No Kotlin linter configured (ktlint/detekt) — skipping lint check"
+    fi
+}
+
+kotlin_build_check() {
+    if { [[ -f "build.gradle" ]] || [[ -f "build.gradle.kts" ]]; } && command -v ./gradlew >/dev/null 2>&1; then
+        run_tool "gradle-build" ./gradlew -q compileKotlin compileTestKotlin || return 1
+    elif { [[ -f "build.gradle" ]] || [[ -f "build.gradle.kts" ]]; } && command -v gradle >/dev/null 2>&1; then
+        run_tool "gradle-build" gradle -q compileKotlin compileTestKotlin || return 1
+    else
+        debug "No Kotlin build tool detected; skipping type/build check"
+    fi
+}
+
+kotlin_test() {
+    if { [[ -f "build.gradle" ]] || [[ -f "build.gradle.kts" ]]; } && command -v ./gradlew >/dev/null 2>&1; then
+        run_tool "gradle-test" ./gradlew -q test || return 1
+    elif { [[ -f "build.gradle" ]] || [[ -f "build.gradle.kts" ]]; } && command -v gradle >/dev/null 2>&1; then
+        run_tool "gradle-test" gradle -q test || return 1
+    else
+        debug "No Kotlin test tool detected; skipping tests"
+    fi
+}
+
+kotlin_coverage() {
+    # Assume JaCoCo/Kover configured in project
+    if { [[ -f "build.gradle" ]] || [[ -f "build.gradle.kts" ]]; } && command -v ./gradlew >/dev/null 2>&1; then
+        run_tool "gradle-coverage" ./gradlew -q test jacocoTestReport || return 1
+    elif { [[ -f "build.gradle" ]] || [[ -f "build.gradle.kts" ]]; } && command -v gradle >/dev/null 2>&1; then
+        run_tool "gradle-coverage" gradle -q test jacocoTestReport || return 1
+    else
+        debug "No Kotlin coverage configuration detected; skipping"
     fi
 }
 

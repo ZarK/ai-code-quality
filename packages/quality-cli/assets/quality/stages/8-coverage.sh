@@ -16,17 +16,27 @@ if ! any_tests_present; then
 fi
 
 if [[ "$TECHS" == *"python"* ]]; then
-    debug "Running pytest coverage..."
-    if ! pytest_coverage; then
-        error "pytest coverage failed"
-        FAILED=1
+    TEST_FRAMEWORK=$(detect_python_test_framework)
+    if [[ "$TEST_FRAMEWORK" == "pytest" ]]; then
+        debug "Running pytest coverage..."
+        if ! pytest_coverage; then
+            error "pytest coverage failed"
+            FAILED=1
+        fi
+    elif [[ "$TEST_FRAMEWORK" == "unittest" ]]; then
+        debug "Running unittest coverage..."
+        if ! unittest_coverage; then
+            error "unittest coverage failed"
+            FAILED=1
+        fi
+    else
+        debug "No Python test framework detected for coverage"
     fi
 fi
 
 if [[ "$TECHS" == *"js"* || "$TECHS" == *"ts"* || "$TECHS" == *"react"* ]]; then
-    debug "Running vitest coverage..."
-    if ! vitest_coverage; then
-        error "vitest coverage failed"
+    if ! js_test_coverage; then
+        error "JS/TS test coverage failed"
         FAILED=1
     fi
 fi
@@ -43,6 +53,14 @@ if [[ "$TECHS" == *"java"* ]]; then
     debug "Running Java coverage (JaCoCo if configured)..."
     if ! java_coverage; then
         error "Java coverage failed"
+        FAILED=1
+    fi
+fi
+
+if [[ "$TECHS" == *"kotlin"* ]]; then
+    debug "Running Kotlin coverage (JaCoCo/Kover if configured)..."
+    if ! kotlin_coverage; then
+        error "Kotlin coverage failed"
         FAILED=1
     fi
 fi

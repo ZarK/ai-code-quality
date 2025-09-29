@@ -41,4 +41,12 @@ if [[ "$TECHS" == *"java"* ]]; then
     fi
 fi
 
+if [[ "$TECHS" == *"kotlin"* ]]; then
+    debug "Running Kotlin build as type check..."
+    if ! kotlin_build_check; then
+        error "Kotlin build/type check failed"
+        FAILED=1
+    fi
+fi
+
 exit $FAILED

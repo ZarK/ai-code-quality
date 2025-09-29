@@ -24,7 +24,7 @@ if [[ "$TECHS" == *"python"* ]]; then
 fi
 
 # Lizard-powered maintainability proxy for non-Python languages
-if [[ "$TECHS" == *"dotnet"* || "$TECHS" == *"java"* || "$TECHS" == *"js"* || "$TECHS" == *"ts"* || "$TECHS" == *"react"* || "$TECHS" == *"go"* ]]; then
+if [[ "$TECHS" == *"dotnet"* || "$TECHS" == *"java"* || "$TECHS" == *"kotlin"* || "$TECHS" == *"js"* || "$TECHS" == *"ts"* || "$TECHS" == *"react"* || "$TECHS" == *"go"* ]]; then
     debug "Running lizard maintainability proxy (ccn/nloc/params) for detected non-Python languages..."
     if ! lizard_maintainability_multi; then
         error "lizard maintainability check failed"
