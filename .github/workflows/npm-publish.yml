@@ -9,6 +9,7 @@ jobs:
   publish:
     name: Publish to npm
     runs-on: ubuntu-latest
+    environment: production
     permissions:
       contents: read
       id-token: write
@@ -19,8 +20,6 @@ jobs:
         with:
           node-version: 'lts/*'
           registry-url: 'https://registry.npmjs.org'
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
       - name: Build package assets
         working-directory: packages/quality-cli
         run: |
@@ -28,4 +27,4 @@ jobs:
       - name: Publish
         working-directory: packages/quality-cli
         run: |
-          npm publish --access public
+          npm publish --provenance --access public
