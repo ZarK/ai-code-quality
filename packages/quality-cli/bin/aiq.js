@@ -178,6 +178,12 @@ function envFromOverrides(cfg) {
   if (langs.java?.enabled !== undefined) env.AIQ_JAVA_ENABLED = langs.java.enabled ? '1' : '0';
   if (langs.go?.enabled !== undefined) env.AIQ_GO_ENABLED = langs.go.enabled ? '1' : '0';
 
+  // Directory exclusions
+  const excludes = cfg?.excludes;
+  if (excludes && Array.isArray(excludes)) {
+    env.AIQ_EXCLUDES = excludes.join(':');
+  }
+
   return env;
 }
 

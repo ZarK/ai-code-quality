@@ -136,33 +136,51 @@ ruff_format() {
     fi
 }
 
-# Utility: detect python source files (excluding common vendor dirs)
+# Utility: build find exclude args from AIQ_EXCLUDES
+_build_exclude_args() {
+    local excludes=""
+    if [[ -n "${AIQ_EXCLUDES:-}" ]]; then
+        IFS=':' read -ra PATTERNS <<<"$AIQ_EXCLUDES"
+        for pattern in "${PATTERNS[@]}"; do
+            excludes="$excludes -not -path \"$pattern\""
+        done
+    fi
+    echo "$excludes"
+}
+
+# Utility: detect python source files (excluding common vendor dirs and config excludes)
 python_files_present() {
-    find . \
-        -type f -name "*.py" \
-        -not -path "*/.venv/*" \
-        -not -path "*/node_modules/*" \
-        -not -path "*/.git/*" \
-        -not -path "*/__pycache__/*" \
-        -not -path "*/.pytest_cache/*" \
-        -not -path "*/.mypy_cache/*" | head -1 | grep -q .
+    local exclude_args
+    exclude_args=$(_build_exclude_args)
+    eval "find . \
+        -type f -name \"*.py\" \
+        -not -path \"*/.venv/*\" \
+        -not -path \"*/node_modules/*\" \
+        -not -path \"*/.git/*\" \
+        -not -path \"*/__pycache__/*\" \
+        -not -path \"*/.pytest_cache/*\" \
+        -not -path \"*/.mypy_cache/*\" \
+        $exclude_args | head -1 | grep -q ."
 }
 
 # Utility: detect python test files
 python_tests_present() {
-    find . \
-        -type f \( -name "test_*.py" -o -name "*_test.py" \) \
-        -not -path "*/.venv/*" \
-        -not -path "*/.venv-*/*" \
-        -not -path "*/.venv*/*" \
-        -not -path "*/venv/*" \
-        -not -path "*/.tox/*" \
-        -not -path "*/.direnv/*" \
-        -not -path "*/node_modules/*" \
-        -not -path "*/.git/*" \
-        -not -path "*/__pycache__/*" \
-        -not -path "*/.pytest_cache/*" \
-        -not -path "*/.mypy_cache/*" | head -1 | grep -q .
+    local exclude_args
+    exclude_args=$(_build_exclude_args)
+    eval "find . \
+        -type f \( -name \"test_*.py\" -o -name \"*_test.py\" \) \
+        -not -path \"*/.venv/*\" \
+        -not -path \"*/.venv-*/*\" \
+        -not -path \"*/.venv*/*\" \
+        -not -path \"*/venv/*\" \
+        -not -path \"*/.tox/*\" \
+        -not -path \"*/.direnv/*\" \
+        -not -path \"*/node_modules/*\" \
+        -not -path \"*/.git/*\" \
+        -not -path \"*/__pycache__/*\" \
+        -not -path \"*/.pytest_cache/*\" \
+        -not -path \"*/.mypy_cache/*\" \
+        $exclude_args | head -1 | grep -q ."
 }
 
 # Utility: detect JS/TS test files (vitest/jest conventions)
@@ -404,14 +422,17 @@ unittest_coverage() {
 radon_sloc() {
     local radon_output
     local files
-    files=$(find . \
-        -type f -name "*.py" \
-        -not -path "*/.venv/*" \
-        -not -path "*/node_modules/*" \
-        -not -path "*/.git/*" \
-        -not -path "*/__pycache__/*" \
-        -not -path "*/.pytest_cache/*" \
-        -not -path "*/.mypy_cache/*" -print0)
+    local exclude_args
+    exclude_args=$(_build_exclude_args)
+    files=$(eval "find . \
+        -type f -name \"*.py\" \
+        -not -path \"*/.venv/*\" \
+        -not -path \"*/node_modules/*\" \
+        -not -path \"*/.git/*\" \
+        -not -path \"*/__pycache__/*\" \
+        -not -path \"*/.pytest_cache/*\" \
+        -not -path \"*/.mypy_cache/*\" \
+        $exclude_args -print0")
     if [[ -z "$files" ]]; then
         return 0
     fi
