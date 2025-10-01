@@ -2,6 +2,17 @@
 
 A self-contained, technology-aware code quality system that can be easily added to any repository. Supports staged rollout to existing projects and full activation for new projects.
 
+## ⚠️ AI Agent Context
+
+This repository is designed for AI agents to understand and implement code quality systems. **For human users, use the `aiq` CLI instead:**
+
+```bash
+npm install -g @tjalve/aiq
+aiq run
+```
+
+The repository structure and documentation are optimized for AI comprehension rather than human readability.
+
 ## Quick Reference
 
 - **9 Quality Stages**: E2E → Lint → Format → Type Check → Unit Test → SLOC → Complexity → Maintainability → Coverage → Security
@@ -12,49 +23,7 @@ A self-contained, technology-aware code quality system that can be easily added 
 
 ## Quick Start
 
-### One-Line Installation
-
-```bash
-curl -sSL https://raw.githubusercontent.com/your-org/ai-code-quality/main/quality/install.sh | bash
-```
-
-### Manual Installation
-
-```bash
-git clone https://github.com/your-org/ai-code-quality.git
-cp -r ai-code-quality/quality ./
-chmod +x quality/bin/*.sh quality/lib/*.sh quality/hooks/* quality/stages/*.sh quality/check.sh
-echo "0" > quality/.phase_progress
-```
-
-## Design Principles
-
-- **Technology-Aware**: Automatically detects your project's technologies and runs appropriate tools
-- **Staged Adoption**: Start with basic checks, gradually increase quality requirements
-- **No Regressions**: Once a stage passes, it must continue to pass (progress tracking)
-- **Self-Contained**: All configurations and tools bundled - no external dependencies
-- **Existing Project Friendly**: Works with your current tools, configs, and workflows
-- **CI/CD Integration**: Pre-commit hooks + GitHub Actions out of the box
-- **Cross-Platform**: macOS, Linux, Windows support with appropriate tooling
-
-## Features
-
-- **9 Quality Stages**: Comprehensive pipeline from E2E testing to security scanning
-- **Auto-Detection**: Python, JavaScript/TypeScript, HTML/CSS, Shell, .NET, Java, Go, HCL/Terraform
-- **E2E First**: Runs end-to-end tests before other quality checks
-- **Staged Rollout**: Add quality checks gradually to existing codebases
-- **No Regression**: Previous phases must always pass (prevents quality degradation)
-- **Self-Contained**: All configs and tools live in the quality/ directory
-- **Pre-commit Ready**: Includes Git pre-commit hook integration
-- **Opinionated**: Sensible defaults that work out of the box
-- **Security Built-in**: Secrets scanning (gitleaks), SAST (semgrep), IaC security (tfsec)
-- **Configurable**: JSON-based configuration for customization
-
-## Usage
-
-### AIQ CLI Package (Recommended)
-
-For the best experience, use the `aiq` CLI package which provides enhanced features like configuration support and better error reporting:
+### AIQ CLI (Recommended)
 
 ```bash
 # Install globally
@@ -88,55 +57,41 @@ aiq hook install
 aiq --help
 ```
 
-### Manual Quality Directory
-
-If you prefer to use the quality system directly without the CLI package:
-
-#### Dependency check and dry-run
-
-- Check what tools you need for your project:
-  ./quality/bin/check_dependencies.sh
-
-- Preview what would be installed (no changes):
-  ./quality/bin/install_tools.sh --dry-run
-
-- Preview install/setup actions:
-  ./quality/install.sh --dry-run --setup-hook --setup-workflow
-
-#### Basic Commands
+### Manual Installation (Alternative)
 
 ```bash
-# Run all quality checks
-./quality/check.sh
-
-# Check specific directory
-./quality/check.sh src/
-
-# Check specific stage
-./quality/check.sh . 3
-
-# Get help
-./quality/check.sh --help
+curl -sSL https://raw.githubusercontent.com/tjalve/ai-code-quality/main/quality/install.sh | bash
 ```
 
-### Pre-commit Hook Setup
+Or clone and copy manually:
 
 ```bash
-# Setup pre-commit hook only
-./quality/install.sh --setup-hook
-
-# Setup GitHub Actions workflow only
-./quality/install.sh --setup-workflow
-
-# Setup both pre-commit hook and GitHub Actions (recommended)
-./quality/install.sh --setup-hook --setup-workflow
-
-# Remove pre-commit hook
-rm .git/hooks/pre-commit
-
-# Remove GitHub Actions workflow
-rm .github/workflows/quality.yml
+git clone https://github.com/tjalve/ai-code-quality.git
+cp -r ai-code-quality/quality ./
+chmod +x quality/bin/*.sh quality/lib/*.sh quality/hooks/* quality/stages/*.sh quality/check.sh
+echo "0" > quality/.phase_progress
 ```
+
+## Overview
+
+The system runs 9 quality stages in order:
+- **0. E2E**: End-to-end testing
+- **1. Lint**: Code linting  
+- **2. Format**: Code formatting
+- **3. Type Check**: Static type checking
+- **4. Unit Test**: Unit testing
+- **5. SLOC**: Source lines of code analysis
+- **6. Complexity**: Cyclomatic complexity analysis
+- **7. Maintainability**: Code maintainability metrics
+- **8. Coverage**: Test coverage analysis
+- **9. Security**: Secrets scanning and SAST
+
+**Key Features:**
+- Auto-detects technologies: Python, JavaScript/TypeScript, HTML/CSS, Shell, .NET, Java, Go, HCL/Terraform
+- Staged adoption: Start with basic checks, gradually enable more stages
+- Self-contained: All configs and tools bundled
+- Existing project friendly: Works with your current tools and configurations
+- CI/CD ready: Pre-commit hooks + GitHub Actions integration
 
 ## Quality Stages
 
@@ -217,108 +172,6 @@ The system automatically detects technologies by scanning for common project fil
 4. Auto-downloaded tools (for some tools like shfmt, shellcheck)
 
 **Version Compatibility**: Tools are tested with recent versions. For existing projects, the system respects your current tool versions and configurations.
-
-## Configuration
-
-The quality system can be configured via `.aiq/quality.config.json` in your project root. This allows you to customize language detection, directory exclusions, and CI behavior.
-
-### Example Configuration
-
-```json
-{
-  "excludes": [
-    "test-projects/*",
-    "node_modules/*",
-    "dist/*",
-    "build/*"
-  ],
-  "languages": {
-    "python": {
-      "enabled": true
-    },
-    "javascript": {
-      "enabled": true
-    },
-    "dotnet": {
-      "enabled": false
-    },
-    "java": {
-      "enabled": false
-    },
-    "go": {
-      "enabled": false
-    }
-  },
-  "ci": {
-    "github_actions": {
-      "enabled": true
-    }
-  }
-}
-```
-
-### Configuration Options
-
-- `excludes`: Array of glob patterns for directories to exclude from quality checks
-- `languages.{language}.enabled`: Enable/disable specific language detection (default: true)
-- `ci.github_actions.enabled`: Enable/disable GitHub Actions integration (default: true)
-- `overrides.{stage}`: Override default thresholds for specific stages
-
-### Stage Overrides
-
-You can customize thresholds for complexity and maintainability checks:
-
-```json
-{
-  "overrides": {
-    "5": {
-      "sloc_limit": 1000
-    },
-    "6": {
-      "ccn_limit": 15
-    },
-    "7": {
-      "ccn_strict": true,
-      "fn_nloc_limit": 50,
-      "param_limit": 8
-    }
-  }
-}
-```
-
-**Stage 5 (SLOC)**: `sloc_limit` - Maximum source lines of code per file
-**Stage 6 (Complexity)**: `ccn_limit` - Maximum cyclomatic complexity
-**Stage 7 (Maintainability)**:
-- `ccn_strict` - Enable strict complexity checking (boolean)
-- `fn_nloc_limit` - Maximum lines of code per function
-- `param_limit` - Maximum function parameters
-
-### Tool Detection and Existing Projects
-
-The system is designed to work with existing projects without disrupting your current setup:
-
-- **Respects existing configurations**: Uses your existing `eslint.config.js`, `tsconfig.json`, `mypy.ini`, etc.
-- **Virtual environments**: Automatically detects and uses `.venv`, `venv`, or project-local virtual environments
-- **Tool versions**: Works with your installed tool versions; doesn't force upgrades
-- **Selective enabling**: Disable languages you don't use to speed up checks
-- **Directory exclusions**: Exclude build artifacts, dependencies, and test directories
-
-For projects with existing `package.json`, `requirements.txt`, or other dependency files, the system will detect and use appropriate tools without requiring changes to your existing setup.
-
-### CLI Usage
-
-When using the `aiq` CLI, configuration is automatically loaded and applied:
-
-```bash
-# Run with config
-npx aiq run
-
-# Run specific stage with config
-npx aiq run --only 8
-
-# Print current config
-npx aiq config --print-config
-```
 
 ## Integration with Development Workflows
 
@@ -554,7 +407,7 @@ The system integrates seamlessly with your existing development setup:
 After installation, your project will have these quality-related files:
 
 ```
-.your-project/
+your-project/
 ├── .aiq/                          # Configuration directory
 │   ├── quality.config.json        # User configuration (optional)
 │   └── progress.json              # Current stage progress
