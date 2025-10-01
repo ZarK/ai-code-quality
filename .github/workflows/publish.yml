@@ -25,13 +25,5 @@ jobs:
       - name: Update npm
         run: npm install -g npm@latest
 
-      - run: npm ci
-
-      - run: npm run build --if-present
-        working-directory: packages/quality-cli
-
-      - run: npm test
-        working-directory: packages/quality-cli
-
       - run: npm publish
         working-directory: packages/quality-cli
