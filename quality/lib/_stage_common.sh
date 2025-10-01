@@ -55,6 +55,11 @@ load_config_env() {
         local tfsec_enabled
         tfsec_enabled=$(python3 -c "import json, sys; data=json.load(sys.stdin); sec=data.get('security', {}); print('1' if sec.get('tfsec', {}).get('enabled', True) else '0')" <"$config_file" 2>/dev/null || echo "1")
         export AIQ_TFSEC_ENABLED="$tfsec_enabled"
+
+        # Load semgrep severity
+        local semgrep_severity
+        semgrep_severity=$(python3 -c "import json, sys; data=json.load(sys.stdin); sec=data.get('security', {}); semgrep=sec.get('semgrep', {}); print(semgrep.get('severity', 'ERROR'))" <"$config_file" 2>/dev/null || echo "ERROR")
+        export AIQ_SEMGREP_SEVERITY="$semgrep_severity"
     fi
 }
 
@@ -1490,7 +1495,7 @@ security_gitleaks() {
 security_semgrep() {
     if command -v semgrep >/dev/null 2>&1; then
         # Use the default auto rules; users can add a .semgrep.yml to customize
-        run_tool "semgrep" semgrep scan --error --severity ERROR || return 1
+        run_tool "semgrep" semgrep scan --error --severity "${AIQ_SEMGREP_SEVERITY:-ERROR}" || return 1
     else
         debug "semgrep not found; skipping SAST scan"
     fi
