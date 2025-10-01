@@ -38,6 +38,23 @@ load_config_env() {
         local go_enabled
         go_enabled=$(python3 -c "import json, sys; data=json.load(sys.stdin); langs=data.get('languages', {}); print('1' if langs.get('go', {}).get('enabled', True) else '0')" <"$config_file" 2>/dev/null || echo "1")
         export AIQ_GO_ENABLED="$go_enabled"
+
+        # Load security settings
+        local security_enabled
+        security_enabled=$(python3 -c "import json, sys; data=json.load(sys.stdin); sec=data.get('security', {}); print('1' if sec.get('enabled', True) else '0')" <"$config_file" 2>/dev/null || echo "1")
+        export AIQ_SECURITY_ENABLED="$security_enabled"
+
+        local gitleaks_enabled
+        gitleaks_enabled=$(python3 -c "import json, sys; data=json.load(sys.stdin); sec=data.get('security', {}); print('1' if sec.get('gitleaks', {}).get('enabled', True) else '0')" <"$config_file" 2>/dev/null || echo "1")
+        export AIQ_GITLEAKS_ENABLED="$gitleaks_enabled"
+
+        local semgrep_enabled
+        semgrep_enabled=$(python3 -c "import json, sys; data=json.load(sys.stdin); sec=data.get('security', {}); print('1' if sec.get('semgrep', {}).get('enabled', True) else '0')" <"$config_file" 2>/dev/null || echo "1")
+        export AIQ_SEMGREP_ENABLED="$semgrep_enabled"
+
+        local tfsec_enabled
+        tfsec_enabled=$(python3 -c "import json, sys; data=json.load(sys.stdin); sec=data.get('security', {}); print('1' if sec.get('tfsec', {}).get('enabled', True) else '0')" <"$config_file" 2>/dev/null || echo "1")
+        export AIQ_TFSEC_ENABLED="$tfsec_enabled"
     fi
 }
 
