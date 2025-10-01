@@ -433,20 +433,8 @@ The quality system can be configured via `.aiq/quality.config.json` in your proj
       "enabled": false
     }
   },
-  "security": {
-    "enabled": true,
-    "gitleaks": {
-      "enabled": true
-    },
-    "semgrep": {
-      "enabled": true,
-      "severity": "ERROR"
-    },
-    "tfsec": {
-      "enabled": true
-    }
-  },
-  "ci": {
+
+   "ci": {
     "github_actions": {
       "enabled": true
     }
@@ -462,6 +450,18 @@ The quality system can be configured via `.aiq/quality.config.json` in your proj
       "ccn_strict": true,
       "fn_nloc_limit": 50,
       "param_limit": 8
+    },
+    "9": {
+      "gitleaks": {
+        "enabled": true
+      },
+      "semgrep": {
+        "enabled": true,
+        "severity": "ERROR"
+      },
+      "tfsec": {
+        "enabled": true
+      }
     }
   }
 }
@@ -477,13 +477,6 @@ The quality system can be configured via `.aiq/quality.config.json` in your proj
 - `languages.{language}.enabled`: Enable/disable specific language detection (default: true)
   - Supported languages: `python`, `javascript`, `dotnet`, `java`, `go`
 
-#### Security Settings
-- `security.enabled`: Enable/disable all security checks (default: true)
-- `security.{tool}.enabled`: Enable/disable specific security tools (default: true)
-  - Tools: `gitleaks`, `semgrep`, `tfsec`
-- `security.semgrep.severity`: Set semgrep severity level (default: "ERROR")
-  - Options: "INFO", "WARNING", "ERROR"
-
 #### Stage Overrides
 - `overrides.{stage}`: Override default thresholds for specific stages
 
@@ -495,6 +488,12 @@ The quality system can be configured via `.aiq/quality.config.json` in your proj
 - `ccn_strict` - Enable strict complexity checking (boolean)
 - `fn_nloc_limit` - Maximum lines of code per function
 - `param_limit` - Maximum function parameters
+
+**Stage 9 (Security)**:
+- `gitleaks.enabled` - Enable/disable secrets scanning (default: true)
+- `semgrep.enabled` - Enable/disable SAST scanning (default: true)
+- `semgrep.severity` - Set semgrep severity level (default: "ERROR", options: "INFO", "WARNING", "ERROR")
+- `tfsec.enabled` - Enable/disable IaC security scanning (default: true)
 
 ### Working with Existing Tool Configurations
 

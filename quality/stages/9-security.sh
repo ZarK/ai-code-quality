@@ -8,12 +8,6 @@ parse_flags "$@"
 
 FAILED=0
 
-# Check if security is enabled in config
-if [[ "${AIQ_SECURITY_ENABLED:-1}" != "1" ]]; then
-    debug "Security checks disabled in config"
-    exit 0
-fi
-
 # Run security scans if tools are present and enabled
 if [[ "${AIQ_GITLEAKS_ENABLED:-1}" == "1" ]] && ! security_gitleaks; then
     error "gitleaks scan failed"
