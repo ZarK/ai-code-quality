@@ -356,9 +356,9 @@ mypy_check() {
         config_args="--config-file $QUALITY_DIR/configs/python/mypy.ini"
     fi
     if command -v mypy >/dev/null 2>&1; then
-        run_tool "mypy" mypy . "$config_args"
+        run_tool "mypy" mypy "$config_args" .
     else
-        run_tool "mypy" .venv/bin/mypy . "$config_args"
+        run_tool "mypy" .venv/bin/mypy "$config_args" .
     fi
 }
 
@@ -1473,7 +1473,7 @@ security_gitleaks() {
 security_semgrep() {
     if command -v semgrep >/dev/null 2>&1; then
         # Use the default auto rules; users can add a .semgrep.yml to customize
-        run_tool "semgrep" semgrep scan --error --severity high,critical || return 1
+        run_tool "semgrep" semgrep scan --error --severity ERROR || return 1
     else
         debug "semgrep not found; skipping SAST scan"
     fi
