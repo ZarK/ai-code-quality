@@ -2,100 +2,31 @@
 
 A self-contained, technology-aware code quality system that can be easily added to any repository. Supports staged rollout to existing projects and full activation for new projects.
 
-## ⚠️ AI Agent Context
+## Caveat
 
-This repository is designed for AI agents to understand and implement code quality systems. **For human users, use the `aiq` CLI instead:**
-
-```bash
-npm install -g @tjalve/aiq
-aiq run
-```
-
-The repository structure and documentation are optimized for AI comprehension rather than human readability.
-
-## Quick Reference
-
-- **9 Quality Stages**: E2E → Lint → Format → Type Check → Unit Test → SLOC → Complexity → Maintainability → Coverage → Security
-- **Auto-Detection**: Python, JavaScript/TypeScript, HTML/CSS, Shell, .NET, Java, Go, HCL/Terraform
-- **Staged Adoption**: Start with basic checks, gradually enable more stages
-- **CI/CD Ready**: Pre-commit hooks + GitHub Actions integration
-- **Configurable**: JSON-based configuration for exclusions, language enable/disable, and thresholds
+This system is designed to be used and created by AI agents. The repository structure and documentation are optimized for AI comprehension.
 
 ## Quick Start
 
-### AIQ CLI (Recommended)
+### AIQ Package (Recommended)
 
 ```bash
 # Install globally
 npm install -g @tjalve/aiq
 
-# Or use with npx (no installation needed)
+# Or run directly with npx
 npx @tjalve/aiq run
-
-# Run all quality checks
-aiq run
-
-# Run specific stage
-aiq run --only 8
-
-# Run up to specific stage
-aiq run --up-to 5
-
-# Run with verbose output
-aiq run --verbose
-
-# Dry run (show what would be done)
-aiq run --dry-run
-
-# Check configuration
-aiq config --print-config
-
-# Setup pre-commit hook
-aiq hook install
-
-# Get help
-aiq --help
 ```
 
-### Manual Installation (Alternative)
+### Manual Installation (Optional)
 
 ```bash
 curl -sSL https://raw.githubusercontent.com/tjalve/ai-code-quality/main/quality/install.sh | bash
 ```
 
-Or clone and copy manually:
-
-```bash
-git clone https://github.com/tjalve/ai-code-quality.git
-cp -r ai-code-quality/quality ./
-chmod +x quality/bin/*.sh quality/lib/*.sh quality/hooks/* quality/stages/*.sh quality/check.sh
-echo "0" > quality/.phase_progress
-```
-
-## Overview
-
-The system runs 9 quality stages in order:
-- **0. E2E**: End-to-end testing
-- **1. Lint**: Code linting  
-- **2. Format**: Code formatting
-- **3. Type Check**: Static type checking
-- **4. Unit Test**: Unit testing
-- **5. SLOC**: Source lines of code analysis
-- **6. Complexity**: Cyclomatic complexity analysis
-- **7. Maintainability**: Code maintainability metrics
-- **8. Coverage**: Test coverage analysis
-- **9. Security**: Secrets scanning and SAST
-
-**Key Features:**
-- Auto-detects technologies: Python, JavaScript/TypeScript, HTML/CSS, Shell, .NET, Java, Go, HCL/Terraform
-- Staged adoption: Start with basic checks, gradually enable more stages
-- Self-contained: All configs and tools bundled
-- Existing project friendly: Works with your current tools and configurations
-- CI/CD ready: Pre-commit hooks + GitHub Actions integration
-
 ## Quality Stages
 
-The system runs 9 stages in order (0-8):
+The system runs 9 quality stages in order:
 
 0. **E2E**: End-to-end testing (Playwright, pytest)
 1. **Lint**: Code linting (ESLint, Ruff, HTMLHint)
@@ -106,6 +37,14 @@ The system runs 9 stages in order (0-8):
 6. **Complexity**: Cyclomatic complexity analysis (Radon for Python; Lizard for .NET/Java/JS/TS/Go)
 7. **Maintainability**: Code maintainability metrics (Radon for Python; Lizard proxy for .NET/Java/JS/TS/Go)
 8. **Coverage**: Test coverage analysis (Jest, pytest-cov)
+9. **Security**: Secrets scanning and SAST
+
+**Key Features:**
+- Auto-detects technologies: Python, JavaScript/TypeScript, HTML/CSS, Shell, .NET, Java, Go, HCL/Terraform
+- Staged adoption: Start with basic checks, gradually enable more stages
+- Self-contained: All configs and tools bundled
+- Existing project friendly: Works with your current tools and configurations
+- CI/CD ready: Pre-commit hooks + GitHub Actions integration
 
 ## Tool Matrix
 
