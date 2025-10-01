@@ -38,6 +38,24 @@ load_config_env() {
         local go_enabled
         go_enabled=$(python3 -c "import json, sys; data=json.load(sys.stdin); langs=data.get('languages', {}); print('1' if langs.get('go', {}).get('enabled', True) else '0')" <"$config_file" 2>/dev/null || echo "1")
         export AIQ_GO_ENABLED="$go_enabled"
+
+        # Load stage 9 (security) overrides
+        local gitleaks_enabled
+        gitleaks_enabled=$(python3 -c "import json, sys; data=json.load(sys.stdin); overrides=data.get('overrides', {}); stage9=overrides.get('9', {}); gitleaks=stage9.get('gitleaks', {}); print('1' if gitleaks.get('enabled', True) else '0')" <"$config_file" 2>/dev/null || echo "1")
+        export AIQ_GITLEAKS_ENABLED="$gitleaks_enabled"
+
+        local semgrep_enabled
+        semgrep_enabled=$(python3 -c "import json, sys; data=json.load(sys.stdin); overrides=data.get('overrides', {}); stage9=overrides.get('9', {}); semgrep=stage9.get('semgrep', {}); print('1' if semgrep.get('enabled', True) else '0')" <"$config_file" 2>/dev/null || echo "1")
+        export AIQ_SEMGREP_ENABLED="$semgrep_enabled"
+
+        local tfsec_enabled
+        tfsec_enabled=$(python3 -c "import json, sys; data=json.load(sys.stdin); overrides=data.get('overrides', {}); stage9=overrides.get('9', {}); tfsec=stage9.get('tfsec', {}); print('1' if tfsec.get('enabled', True) else '0')" <"$config_file" 2>/dev/null || echo "1")
+        export AIQ_TFSEC_ENABLED="$tfsec_enabled"
+
+        # Load semgrep severity
+        local semgrep_severity
+        semgrep_severity=$(python3 -c "import json, sys; data=json.load(sys.stdin); overrides=data.get('overrides', {}); stage9=overrides.get('9', {}); semgrep=stage9.get('semgrep', {}); print(semgrep.get('severity', 'ERROR'))" <"$config_file" 2>/dev/null || echo "ERROR")
+        export AIQ_SEMGREP_SEVERITY="$semgrep_severity"
     fi
 }
 
@@ -356,9 +374,9 @@ mypy_check() {
         config_args="--config-file $QUALITY_DIR/configs/python/mypy.ini"
     fi
     if command -v mypy >/dev/null 2>&1; then
-        run_tool "mypy" mypy . "$config_args"
+        run_tool "mypy" mypy "$config_args" .
     else
-        run_tool "mypy" .venv/bin/mypy . "$config_args"
+        run_tool "mypy" .venv/bin/mypy "$config_args" .
     fi
 }
 
@@ -1473,7 +1491,7 @@ security_gitleaks() {
 security_semgrep() {
     if command -v semgrep >/dev/null 2>&1; then
         # Use the default auto rules; users can add a .semgrep.yml to customize
-        run_tool "semgrep" semgrep scan --error --severity high,critical || return 1
+        run_tool "semgrep" semgrep scan --error --severity "${AIQ_SEMGREP_SEVERITY:-ERROR}" || return 1
     else
         debug "semgrep not found; skipping SAST scan"
     fi

@@ -125,9 +125,16 @@ async function resolveQualityPaths() {
     ensureDir(out.root);
     // Force fresh copy by removing existing cache
     if (existsSync(out.qdir)) {
-      // Use rmSync to remove existing cache
-      const { rmSync } = await import('node:fs');
-      rmSync(out.qdir, { recursive: true, force: true });
+      // Use rm -rf to remove existing cache (more reliable than fs.rmSync)
+      try {
+        spawnSync('rm', ['-rf', out.qdir], { stdio: 'inherit' });
+      } catch (err) {
+        // If rm fails, try fs.rmSync as fallback
+        try {
+          const { rmSync } = await import('node:fs');
+          rmSync(out.qdir, { recursive: true, force: true });
+        } catch {}
+      }
     }
     // Ensure destination directory exists
     ensureDir(out.qdir);

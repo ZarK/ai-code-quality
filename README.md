@@ -402,6 +402,110 @@ The system integrates seamlessly with your existing development setup:
 
 The system never overwrites your configurations - it enhances them with additional quality checks.
 
+## Configuration
+
+The quality system can be configured via `.aiq/quality.config.json` in your project root. This allows you to customize language detection, directory exclusions, security settings, and CI behavior.
+
+### Example Configuration
+
+```json
+{
+  "excludes": [
+    "test-projects/*",
+    "node_modules/*",
+    "dist/*",
+    "build/*"
+  ],
+  "languages": {
+    "python": {
+      "enabled": true
+    },
+    "javascript": {
+      "enabled": true
+    },
+    "dotnet": {
+      "enabled": false
+    },
+    "java": {
+      "enabled": false
+    },
+    "go": {
+      "enabled": false
+    }
+  },
+
+   "ci": {
+    "github_actions": {
+      "enabled": true
+    }
+  },
+  "overrides": {
+    "5": {
+      "sloc_limit": 1000
+    },
+    "6": {
+      "ccn_limit": 15
+    },
+    "7": {
+      "ccn_strict": true,
+      "fn_nloc_limit": 50,
+      "param_limit": 8
+    },
+    "9": {
+      "gitleaks": {
+        "enabled": true
+      },
+      "semgrep": {
+        "enabled": true,
+        "severity": "ERROR"
+      },
+      "tfsec": {
+        "enabled": true
+      }
+    }
+  }
+}
+```
+
+### Configuration Options
+
+#### Global Settings
+- `excludes`: Array of glob patterns for directories to exclude from quality checks
+- `ci.github_actions.enabled`: Enable/disable GitHub Actions integration (default: true)
+
+#### Language Detection
+- `languages.{language}.enabled`: Enable/disable specific language detection (default: true)
+  - Supported languages: `python`, `javascript`, `dotnet`, `java`, `go`
+
+#### Stage Overrides
+- `overrides.{stage}`: Override default thresholds for specific stages
+
+**Stage 5 (SLOC)**: `sloc_limit` - Maximum source lines of code per file
+
+**Stage 6 (Complexity)**: `ccn_limit` - Maximum cyclomatic complexity
+
+**Stage 7 (Maintainability)**:
+- `ccn_strict` - Enable strict complexity checking (boolean)
+- `fn_nloc_limit` - Maximum lines of code per function
+- `param_limit` - Maximum function parameters
+
+**Stage 9 (Security)**:
+- `gitleaks.enabled` - Enable/disable secrets scanning (default: true)
+- `semgrep.enabled` - Enable/disable SAST scanning (default: true)
+- `semgrep.severity` - Set semgrep severity level (default: "ERROR", options: "INFO", "WARNING", "ERROR")
+- `tfsec.enabled` - Enable/disable IaC security scanning (default: true)
+
+### Working with Existing Tool Configurations
+
+The system integrates seamlessly with your existing development setup:
+
+- **ESLint/Prettier**: Uses your `.eslintrc.js`, `prettier.config.js`
+- **TypeScript**: Respects `tsconfig.json` compiler options
+- **Python**: Uses `mypy.ini`, `pyproject.toml` configurations
+- **Package managers**: Works with npm, yarn, pnpm, pip, poetry
+- **Virtual environments**: Auto-detects `.venv`, `venv`, conda environments
+- **CI/CD**: Compatible with GitHub Actions, GitLab CI, Jenkins, etc.
+
 ## Troubleshooting
 
 ### Common Issues

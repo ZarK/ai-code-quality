@@ -8,19 +8,19 @@ parse_flags "$@"
 
 FAILED=0
 
-# Always run security scans if tools are present
-if ! security_gitleaks; then
+# Run security scans if tools are present and enabled
+if [[ "${AIQ_GITLEAKS_ENABLED:-1}" == "1" ]] && ! security_gitleaks; then
     error "gitleaks scan failed"
     FAILED=1
 fi
 
-if ! security_semgrep; then
+if [[ "${AIQ_SEMGREP_ENABLED:-1}" == "1" ]] && ! security_semgrep; then
     error "semgrep scan failed"
     FAILED=1
 fi
 
 # Terraform security (if IaC present and tool available)
-if ! hcl_security_check; then
+if [[ "${AIQ_TFSEC_ENABLED:-1}" == "1" ]] && ! hcl_security_check; then
     error "Terraform security (tfsec) failed"
     FAILED=1
 fi
